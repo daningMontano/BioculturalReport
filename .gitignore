@@ -1,0 +1,37 @@
+# R
+.Rhistory
+.RData
+.Ruserdata
+*.Rproj.user/
+
+# renv (mantener renv.lock, ignorar librería local)
+renv/library/
+renv/local/
+renv/cellar/
+renv/lock/
+renv/python/
+renv/staging/
+# SÍ versionar estos:
+!renv/activate.R
+!renv/settings.json
+
+# Datos sensibles
+data/raw/
+data/private/
+*.csv.gz
+*.rds
+!data/README.md
+
+# Shiny logs
+*.log
+rsconnect/
+
+# OS
+.DS_Store
+Thumbs.db
+__MACOSX/
+
+# Outputs temporales
+*.tmp
+output/
+.Rproj.user
