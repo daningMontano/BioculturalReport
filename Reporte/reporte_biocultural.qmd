@@ -1,0 +1,1011 @@
+---
+title: "📊 Reporte de Monitoreo Biocultural"
+subtitle: "Fundación Pachamama — Proyecto de Conservación Biocultural Achuar"
+author: "Equipo de Monitoreo Comunitario"
+date: today
+format:
+  html:
+    theme: cosmo
+    toc: true
+    toc-depth: 3
+    toc-title: "Contenido"
+    toc-location: left
+    number-sections: true
+    code-fold: true
+    code-summary: "Ver código"
+    self-contained: true
+    smooth-scroll: true
+    page-layout: full
+    css: estilos.css
+    include-in-header:
+      text: |
+        <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css"/>
+execute:
+  echo: false
+  warning: false
+  message: false
+params:
+  comunidad: "Todas"
+  anio_inicio: 2023
+  anio_fin: 2026
+---
+
+```{r setup}
+#| include: false
+
+library(dplyr)
+library(tidyr)
+library(ggplot2)
+library(plotly)
+library(lubridate)
+library(stringr)
+library(forcats)
+library(scales)
+library(DT)
+library(glue)
+library(purrr)
+library(htmlwidgets)
+
+# ── Colores Pachamama ────────────────────────────────────────────────────────
+pal_pachamama <- c(
+  verde_bosque  = "#2D6A4F",
+  verde_medio   = "#40916C",
+  verde_claro   = "#74C69D",
+  verde_suave   = "#B7E4C7",
+  tierra        = "#8B5E3C",
+  tierra_claro  = "#D4A373",
+  amarillo      = "#FFD166",
+  naranja       = "#EF8C4B",
+  azul          = "#264653",
+  gris          = "#6B7280"
+)
+
+# ── Función tema corporativo ─────────────────────────────────────────────────
+tema_pachamama <- function(base_size = 12) {
+  theme_minimal(base_size = base_size) +
+  theme(
+    plot.title       = element_text(face = "bold", color = pal_pachamama["verde_bosque"], size = base_size + 2),
+    plot.subtitle    = element_text(color = pal_pachamama["gris"], size = base_size - 1),
+    axis.title       = element_text(color = pal_pachamama["azul"], size = base_size - 1),
+    axis.text        = element_text(color = "#374151"),
+    panel.grid.major = element_line(color = "#E5E7EB", linewidth = 0.5),
+    panel.grid.minor = element_blank(),
+    legend.position  = "top",
+    legend.title     = element_text(face = "bold"),
+    strip.text       = element_text(face = "bold", color = pal_pachamama["verde_bosque"]),
+    plot.background  = element_rect(fill = "white", color = NA),
+    panel.background = element_rect(fill = "#FAFAFA", color = NA)
+  )
+}
+
+# ── Carga de datos ────────────────────────────────────────────────────────────
+ruta_datos <- "../Data"
+
+asambleas <- read.csv(file.path(ruta_datos, "Asambleas.csv"), stringsAsFactors = FALSE) |>
+  mutate(
+    Fecha        = as.Date(Fecha),
+    Anio         = year(Fecha),
+    Mes          = month(Fecha, label = TRUE, abbr = FALSE),
+    MesNum       = month(Fecha),
+    YearMon      = floor_date(Fecha, "month"),
+    Participantes = coalesce(as.numeric(Numero_hombres), 0) + coalesce(as.numeric(Numero_mujeres), 0),
+    Tipo_asamblea = coalesce(Tipo_asamblea, "Sin clasificar")
+  ) |>
+  filter(!is.na(Fecha))
+
+capacitaciones <- read.csv(file.path(ruta_datos, "Capacitaciones.csv"), stringsAsFactors = FALSE) |>
+  mutate(
+    Fecha       = as.Date(Fecha),
+    Anio        = year(Fecha),
+    Mes         = month(Fecha, label = TRUE, abbr = FALSE),
+    MesNum      = month(Fecha),
+    YearMon     = floor_date(Fecha, "month"),
+    Participantes = coalesce(as.numeric(Numero_hombres), 0) + coalesce(as.numeric(Numero_mujeres), 0),
+    Horas       = coalesce(as.numeric(Numero_horas_capacitacion), 0)
+  ) |>
+  filter(!is.na(Fecha))
+
+seg_alim_raw <- read.csv(file.path(ruta_datos, "df_seguridad_alimentaria.csv"), stringsAsFactors = FALSE)
+
+insumos_raw  <- read.csv(file.path(ruta_datos, "df_entrega_insumos.csv"), stringsAsFactors = FALSE)
+
+jaguar_raw   <- read.csv(file.path(ruta_datos, "Evidencias_jaguar.csv"), stringsAsFactors = FALSE)
+
+social_raw   <- read.csv(file.path(ruta_datos, "Socialización_acuerdos.csv"), stringsAsFactors = FALSE)
+
+# ── Comunidades disponibles ───────────────────────────────────────────────────
+comunidades <- sort(unique(c(
+  asambleas$Comunidad,
+  capacitaciones$Comunidad
+)))
+comunidades <- comunidades[!is.na(comunidades) & comunidades != ""]
+
+# ── Resumen global ────────────────────────────────────────────────────────────
+n_asambleas      <- nrow(asambleas)
+n_capacitaciones <- nrow(capacitaciones)
+n_comunidades    <- length(comunidades)
+part_total_asm   <- sum(asambleas$Participantes, na.rm = TRUE)
+part_total_cap   <- sum(capacitaciones$Participantes, na.rm = TRUE)
+horas_total      <- sum(capacitaciones$Horas, na.rm = TRUE)
+```
+
+---
+
+::: {.callout-note appearance="minimal"}
+🌿 **Proyecto de Conservación Biocultural Achuar** · Cuencas del Pastaza · Ecuador  
+Datos generados por monitores comunitarios a través de KoboToolbox · Última actualización: `r Sys.Date()`
+:::
+
+# Filtros Globales {.unnumbered}
+
+::: {.callout-tip}
+Los filtros a continuación permiten explorar los datos por **comunidad** y **rango de años**. Actualiza los parámetros en el encabezado YAML (`params`) o usa `quarto render` con `--execute-params` para regenerar el informe filtrando por comunidad y fechas.  
+Para uso dinámico, se recomienda desplegar como **Shiny document** (ver sección al final).
+:::
+
+```{r filtros-info}
+cat(glue("
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+Filtro activo → Comunidad : {params$comunidad}
+               Años       : {params$anio_inicio} – {params$anio_fin}
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+Comunidades disponibles: {paste(comunidades, collapse = ' | ')}
+"))
+```
+
+```{r aplicar-filtros}
+# Aplicar filtros según parámetros
+filtrar_df <- function(df) {
+  df <- df |> filter(Anio >= params$anio_inicio & Anio <= params$anio_fin)
+  if (params$comunidad != "Todas") {
+    df <- df |> filter(str_detect(Comunidad, fixed(params$comunidad, ignore_case = TRUE)))
+  }
+  df
+}
+
+asm   <- filtrar_df(asambleas)
+cap   <- filtrar_df(capacitaciones)
+```
+
+---
+
+# Resumen Ejecutivo
+
+```{r kpis}
+# KPIs principales
+kpis <- list(
+  list(icono = "fa-users",           valor = nrow(asm),                        etiqueta = "Asambleas realizadas",       color = pal_pachamama["verde_bosque"]),
+  list(icono = "fa-graduation-cap",  valor = nrow(cap),                        etiqueta = "Sesiones de capacitación",   color = pal_pachamama["verde_medio"]),
+  list(icono = "fa-people-group",    valor = sum(asm$Participantes, na.rm=TRUE)+sum(cap$Participantes, na.rm=TRUE), etiqueta = "Participaciones totales", color = pal_pachamama["tierra"]),
+  list(icono = "fa-clock",           valor = sum(cap$Horas, na.rm=TRUE),        etiqueta = "Horas de capacitación",      color = pal_pachamama["naranja"]),
+  list(icono = "fa-map-marker-alt",  valor = length(unique(c(asm$Comunidad, cap$Comunidad))), etiqueta = "Comunidades activas", color = pal_pachamama["azul"])
+)
+
+# Generar HTML de KPIs
+kpi_html <- map_chr(kpis, function(k) {
+  glue('
+  <div class="kpi-card" style="border-top: 4px solid {k$color};">
+    <div class="kpi-icon"><i class="fas {k$icono}" style="color:{k$color}"></i></div>
+    <div class="kpi-valor">{format(k$valor, big.mark=",")}</div>
+    <div class="kpi-etiqueta">{k$etiqueta}</div>
+  </div>')
+})
+
+htmltools::HTML(paste0('<div class="kpi-grid">', paste(kpi_html, collapse=""), '</div>'))
+```
+
+```{r serie-resumen}
+# Serie temporal de actividades combinadas
+serie_asm <- asm |> 
+  count(YearMon, name = "n") |> 
+  mutate(Tipo = "Asambleas")
+
+serie_cap <- cap |> 
+  count(YearMon, name = "n") |> 
+  mutate(Tipo = "Capacitaciones")
+
+serie_total <- bind_rows(serie_asm, serie_cap) |>
+  filter(!is.na(YearMon))
+
+p_serie <- plot_ly(serie_total,
+  x = ~YearMon, y = ~n, color = ~Tipo,
+  colors = c("Asambleas" = pal_pachamama["verde_bosque"], 
+             "Capacitaciones" = pal_pachamama["naranja"]),
+  type = "scatter", mode = "lines+markers",
+  line = list(width = 2),
+  marker = list(size = 7),
+  text = ~paste0("<b>", Tipo, "</b><br>", format(YearMon, "%B %Y"), "<br>N = ", n),
+  hoverinfo = "text"
+) |>
+layout(
+  title = list(text = "Serie Temporal: Actividades por Mes", font = list(color = "#2D6A4F", size = 16)),
+  xaxis = list(title = "", rangeslider = list(visible = TRUE), 
+               rangeselector = list(buttons = list(
+                 list(count=3, label="3m", step="month", stepmode="backward"),
+                 list(count=6, label="6m", step="month", stepmode="backward"),
+                 list(count=1, label="1a", step="year", stepmode="backward"),
+                 list(step="all", label="Todo")
+               ))),
+  yaxis = list(title = "Número de actividades"),
+  legend = list(orientation = "h", x = 0.5, xanchor = "center"),
+  hovermode = "x unified",
+  plot_bgcolor  = "#FAFAFA",
+  paper_bgcolor = "white"
+)
+
+p_serie
+```
+
+---
+
+# Gobernanza Comunitaria — Asambleas {#sec-asambleas}
+
+> **Fuente:** `Asambleas.csv` · Registro de asambleas ordinarias y extraordinarias por comunidad
+
+## Distribución Temporal
+
+```{r asambleas-serie}
+asm_mes <- asm |>
+  count(YearMon, Comunidad) |>
+  filter(!is.na(YearMon))
+
+p_asm_serie <- plot_ly(asm_mes,
+  x = ~YearMon, y = ~n, color = ~Comunidad,
+  colors = c(pal_pachamama["verde_bosque"], pal_pachamama["tierra"], pal_pachamama["azul"], pal_pachamama["naranja"]),
+  type = "bar",
+  text = ~paste0("<b>", Comunidad, "</b><br>", format(YearMon, "%B %Y"), "<br>Asambleas: ", n),
+  hoverinfo = "text"
+) |>
+layout(
+  barmode = "stack",
+  title = list(text = "Asambleas por Mes y Comunidad", font = list(color = "#2D6A4F", size = 15)),
+  xaxis = list(title = "", rangeslider = list(visible = TRUE)),
+  yaxis = list(title = "N° Asambleas"),
+  legend = list(orientation = "h"),
+  plot_bgcolor = "#FAFAFA", paper_bgcolor = "white"
+)
+
+p_asm_serie
+```
+
+## Participación por Género y Comunidad
+
+```{r participacion-genero}
+asm_genero <- asm |>
+  filter(!is.na(Comunidad)) |>
+  group_by(Comunidad) |>
+  summarise(
+    Hombres  = sum(as.numeric(Numero_hombres), na.rm = TRUE),
+    Mujeres  = sum(as.numeric(Numero_mujeres), na.rm = TRUE),
+    .groups = "drop"
+  ) |>
+  pivot_longer(cols = c(Hombres, Mujeres), names_to = "Genero", values_to = "N") |>
+  filter(N > 0)
+
+p_genero <- plot_ly(asm_genero,
+  x = ~Comunidad, y = ~N, color = ~Genero,
+  colors = c("Hombres" = pal_pachamama["azul"], "Mujeres" = pal_pachamama["tierra"]),
+  type = "bar",
+  text = ~paste0("<b>", Genero, "</b><br>Comunidad: ", Comunidad, "<br>N = ", format(N, big.mark=",")),
+  hoverinfo = "text"
+) |>
+layout(
+  barmode = "group",
+  title = list(text = "Participación por Género y Comunidad (acumulado)", font = list(color = "#2D6A4F", size = 15)),
+  xaxis = list(title = "Comunidad"),
+  yaxis = list(title = "Personas"),
+  legend = list(orientation = "h"),
+  plot_bgcolor = "#FAFAFA", paper_bgcolor = "white"
+)
+
+p_genero
+```
+
+```{r participacion-ratio}
+# Ratio de equidad de género
+asm_ratio <- asm |>
+  filter(!is.na(Comunidad)) |>
+  group_by(Comunidad) |>
+  summarise(
+    Hombres = sum(as.numeric(Numero_hombres), na.rm = TRUE),
+    Mujeres = sum(as.numeric(Numero_mujeres), na.rm = TRUE),
+    .groups = "drop"
+  ) |>
+  mutate(
+    Total     = Hombres + Mujeres,
+    Pct_Muj   = round(100 * Mujeres / pmax(Total, 1), 1),
+    Equidad   = case_when(
+      Pct_Muj >= 45 & Pct_Muj <= 55 ~ "✅ Equitativo",
+      Pct_Muj >= 35 & Pct_Muj < 45  ~ "🟡 Moderado",
+      Pct_Muj > 55 & Pct_Muj <= 65  ~ "🟡 Moderado",
+      TRUE ~ "🔴 Desequilibrado"
+    )
+  )
+
+plot_ly(asm_ratio,
+  x = ~Comunidad, y = ~Pct_Muj,
+  type = "bar",
+  marker = list(color = ~Pct_Muj, colorscale = list(c(0,"#264653"), c(0.5,"#74C69D"), c(1,"#2D6A4F"))),
+  text = ~paste0(Comunidad, "<br>% Mujeres: ", Pct_Muj, "%<br>", Equidad),
+  hoverinfo = "text"
+) |>
+layout(
+  shapes = list(
+    list(type = "line", y0 = 50, y1 = 50, x0 = -0.5, x1 = length(unique(asm_ratio$Comunidad)) - 0.5,
+         line = list(dash = "dash", color = "#EF8C4B", width = 2))
+  ),
+  title = list(text = "Indicador de Equidad de Género (% Mujeres por Comunidad)", font = list(color = "#2D6A4F", size = 15)),
+  yaxis = list(title = "% Mujeres", range = c(0, 100)),
+  xaxis = list(title = ""),
+  annotations = list(list(x = 0, y = 51, text = "50% paridad", showarrow = FALSE, font = list(color = "#EF8C4B", size = 11))),
+  plot_bgcolor = "#FAFAFA", paper_bgcolor = "white"
+)
+```
+
+## Tipo de Asamblea
+
+```{r tipo-asamblea}
+asm_tipo <- asm |>
+  filter(!is.na(Tipo_asamblea)) |>
+  count(Tipo_asamblea, Comunidad) |>
+  group_by(Tipo_asamblea) |>
+  mutate(Total = sum(n))
+
+p_tipo <- plot_ly(asm_tipo,
+  labels = ~Tipo_asamblea, values = ~n,
+  type = "pie",
+  hole = 0.4,
+  textinfo = "label+percent",
+  hovertemplate = "<b>%{label}</b><br>Total: %{value}<br>%{percent}<extra></extra>",
+  marker = list(colors = unname(pal_pachamama[c("verde_bosque", "tierra", "azul", "naranja")]))
+) |>
+layout(
+  title = list(text = "Distribución por Tipo de Asamblea", font = list(color = "#2D6A4F", size = 15)),
+  showlegend = TRUE,
+  plot_bgcolor = "white", paper_bgcolor = "white"
+)
+
+p_tipo
+```
+
+## Tabla de Asambleas
+
+```{r tabla-asambleas}
+asm |>
+  select(Fecha, Comunidad, Tipo_asamblea, Numero_hombres, Numero_mujeres, Participantes, Decision_principal) |>
+  arrange(desc(Fecha)) |>
+  mutate(
+    Fecha = format(Fecha, "%d/%m/%Y"),
+    Numero_hombres = coalesce(as.numeric(Numero_hombres), 0L),
+    Numero_mujeres = coalesce(as.numeric(Numero_mujeres), 0L)
+  ) |>
+  rename(
+    "Tipo"         = Tipo_asamblea,
+    "Hombres"      = Numero_hombres,
+    "Mujeres"      = Numero_mujeres,
+    "Total"        = Participantes,
+    "Decisión"     = Decision_principal
+  ) |>
+  datatable(
+    filter     = "top",
+    extensions = c("Buttons", "Scroller"),
+    options    = list(
+      dom        = "Bfrtip",
+      buttons    = c("csv", "excel"),
+      scrollY    = 350,
+      scroller   = TRUE,
+      pageLength = 15,
+      language   = list(url = "//cdn.datatables.net/plug-ins/1.10.11/i18n/Spanish.json")
+    ),
+    class      = "compact stripe hover"
+  ) |>
+  formatStyle("Total", background = styleColorBar(c(0, max(asm$Participantes, na.rm=TRUE)), "#B7E4C7"))
+```
+
+---
+
+# Generación de Capacidades {#sec-capacitaciones}
+
+> **Fuente:** `Capacitaciones.csv` · Talleres y sesiones formativas por comunidad y temática
+
+## Serie Temporal de Capacitaciones
+
+```{r cap-serie}
+cap_mes <- cap |>
+  count(YearMon, Comunidad) |>
+  filter(!is.na(YearMon))
+
+plot_ly(cap_mes,
+  x = ~YearMon, y = ~n, color = ~Comunidad,
+  colors = unname(pal_pachamama[c("verde_bosque", "tierra", "azul", "naranja")]),
+  type = "scatter", mode = "lines+markers",
+  line = list(width = 2.5),
+  marker = list(size = 8),
+  text = ~paste0("<b>", Comunidad, "</b><br>", format(YearMon, "%B %Y"), "<br>Sesiones: ", n),
+  hoverinfo = "text"
+) |>
+layout(
+  title = list(text = "Sesiones de Capacitación por Mes", font = list(color = "#2D6A4F", size = 15)),
+  xaxis = list(title = "", rangeslider = list(visible = TRUE)),
+  yaxis = list(title = "N° Sesiones"),
+  legend = list(orientation = "h"),
+  hovermode = "x unified",
+  plot_bgcolor = "#FAFAFA", paper_bgcolor = "white"
+)
+```
+
+## Horas de Capacitación Acumuladas
+
+```{r horas-acumuladas}
+horas_mes <- cap |>
+  group_by(YearMon, Comunidad) |>
+  summarise(Horas = sum(Horas, na.rm = TRUE), .groups = "drop") |>
+  filter(!is.na(YearMon)) |>
+  arrange(YearMon) |>
+  group_by(Comunidad) |>
+  mutate(Horas_acum = cumsum(Horas))
+
+plot_ly(horas_mes,
+  x = ~YearMon, y = ~Horas_acum, color = ~Comunidad,
+  colors = unname(pal_pachamama[c("verde_bosque", "tierra", "azul", "naranja")]),
+  type = "scatter", mode = "lines",
+  fill = "tozeroy", alpha = 0.4,
+  line = list(width = 2.5),
+  text = ~paste0("<b>", Comunidad, "</b><br>", format(YearMon, "%B %Y"), "<br>Horas acum.: ", round(Horas_acum, 1)),
+  hoverinfo = "text"
+) |>
+layout(
+  title = list(text = "Horas de Capacitación Acumuladas", font = list(color = "#2D6A4F", size = 15)),
+  xaxis = list(title = ""),
+  yaxis = list(title = "Horas acumuladas"),
+  legend = list(orientation = "h"),
+  plot_bgcolor = "#FAFAFA", paper_bgcolor = "white"
+)
+```
+
+## Temáticas de Capacitación
+
+```{r cap-temas}
+cap_temas <- cap |>
+  filter(!is.na(Capacidad_adquirida) & Capacidad_adquirida != "") |>
+  mutate(
+    Tema = case_when(
+      str_detect(str_to_lower(Capacidad_adquirida), "dron|drone")              ~ "Drone / Fotografía",
+      str_detect(str_to_lower(Capacidad_adquirida), "cámara|camara|trampa")    ~ "Cámaras trampa",
+      str_detect(str_to_lower(Capacidad_adquirida), "gps")                     ~ "GPS",
+      str_detect(str_to_lower(Capacidad_adquirida), "monitoreo|monitor")       ~ "Monitoreo",
+      str_detect(str_to_lower(Capacidad_adquirida), "piscicult|piscin|alivines") ~ "Piscicultura",
+      str_detect(str_to_lower(Capacidad_adquirida), "avicult|pollo|aves")      ~ "Avicultura",
+      str_detect(str_to_lower(Capacidad_adquirida), "comunicac|radio|audio")   ~ "Comunicación",
+      str_detect(str_to_lower(Capacidad_adquirida), "taller|capacitac")        ~ "Taller general",
+      str_detect(str_to_lower(Capacidad_adquirida), "acuerdo|manejo|recurso")  ~ "Manejo de recursos",
+      str_detect(str_to_lower(Capacidad_adquirida), "arquitectura|casa")       ~ "Arquitectura tradicional",
+      str_detect(str_to_lower(Capacidad_adquirida), "limite|lindero|territorio") ~ "Territorio / Límites",
+      TRUE ~ "Otros"
+    )
+  ) |>
+  count(Tema, sort = TRUE)
+
+plot_ly(cap_temas,
+  x = ~n, y = ~reorder(Tema, n),
+  type = "bar", orientation = "h",
+  marker = list(color = pal_pachamama["verde_bosque"],
+                line = list(color = pal_pachamama["verde_claro"], width = 1)),
+  text = ~n, textposition = "outside",
+  hovertemplate = "<b>%{y}</b><br>Sesiones: %{x}<extra></extra>"
+) |>
+layout(
+  title = list(text = "Temáticas de Capacitación (sesiones)", font = list(color = "#2D6A4F", size = 15)),
+  xaxis = list(title = "N° de sesiones"),
+  yaxis = list(title = ""),
+  plot_bgcolor = "#FAFAFA", paper_bgcolor = "white"
+)
+```
+
+## Esfuerzo de Capacitación (Horas × Participantes)
+
+```{r esfuerzo}
+# Indicador propuesto: esfuerzo = Horas × Participantes
+esfuerzo <- cap |>
+  filter(Participantes > 0 & Horas > 0) |>
+  mutate(Esfuerzo = Horas * Participantes) |>
+  group_by(YearMon, Comunidad) |>
+  summarise(Esfuerzo_total = sum(Esfuerzo, na.rm = TRUE), .groups = "drop") |>
+  filter(!is.na(YearMon))
+
+plot_ly(esfuerzo,
+  x = ~YearMon, y = ~Esfuerzo_total, color = ~Comunidad,
+  colors = unname(pal_pachamama[c("verde_bosque", "tierra", "azul", "naranja")]),
+  type = "bar",
+  text = ~paste0("<b>", Comunidad, "</b><br>", format(YearMon, "%B %Y"), "<br>Esfuerzo: ", format(Esfuerzo_total, big.mark=",")),
+  hoverinfo = "text"
+) |>
+layout(
+  barmode = "stack",
+  title = list(text = "Esfuerzo de Capacitación (Horas × Participantes)", font = list(color = "#2D6A4F", size = 15)),
+  xaxis = list(title = "", rangeslider = list(visible = TRUE)),
+  yaxis = list(title = "Horas-persona"),
+  legend = list(orientation = "h"),
+  plot_bgcolor = "#FAFAFA", paper_bgcolor = "white"
+)
+```
+
+## Tabla de Capacitaciones
+
+```{r tabla-cap}
+cap |>
+  select(Fecha, Comunidad, Monitor, Participantes, Horas, Capacidad_adquirida) |>
+  arrange(desc(Fecha)) |>
+  mutate(Fecha = format(Fecha, "%d/%m/%Y")) |>
+  rename("Capacidad / Tema" = Capacidad_adquirida) |>
+  datatable(
+    filter     = "top",
+    extensions = c("Buttons", "Scroller"),
+    options    = list(
+      dom = "Bfrtip", buttons = c("csv", "excel"),
+      scrollY = 350, scroller = TRUE,
+      language = list(url = "//cdn.datatables.net/plug-ins/1.10.11/i18n/Spanish.json")
+    ),
+    class = "compact stripe hover"
+  ) |>
+  formatStyle("Horas", background = styleColorBar(c(0, max(cap$Horas, na.rm=TRUE)), "#FFD166")) |>
+  formatStyle("Participantes", background = styleColorBar(c(0, max(cap$Participantes, na.rm=TRUE)), "#74C69D"))
+```
+
+---
+
+# Seguridad Alimentaria e Insumos {#sec-seguridad}
+
+> **Fuente:** `df_seguridad_alimentaria.csv` · `df_entrega_insumos.csv`
+
+```{r seg-alim-analisis}
+# Detectar columnas disponibles en seguridad alimentaria
+seg_cols   <- names(seg_alim_raw)
+insumo_cols <- names(insumos_raw)
+```
+
+## Entrega de Insumos
+
+```{r insumos-plot}
+insumos_clean <- insumos_raw |>
+  filter(!is.na(Insumos_entregados) & Insumos_entregados != "") |>
+  mutate(N_insumos = as.numeric(N_insumos)) |>
+  filter(!is.na(N_insumos) & N_insumos > 0)
+
+if (nrow(insumos_clean) > 0) {
+  ins_resumen <- insumos_clean |>
+    group_by(Insumos_entregados) |>
+    summarise(
+      Cantidad_total = sum(N_insumos, na.rm = TRUE),
+      N_entregas     = n(),
+      .groups = "drop"
+    ) |>
+    arrange(desc(Cantidad_total))
+
+  plot_ly(ins_resumen,
+    x = ~Insumos_entregados, y = ~Cantidad_total,
+    type = "bar",
+    marker = list(color = pal_pachamama["tierra"],
+                  line = list(color = pal_pachamama["tierra_claro"], width = 1)),
+    text = ~paste0("<b>", Insumos_entregados, "</b><br>Cantidad total: ", format(Cantidad_total, big.mark=","), "<br>N° entregas: ", N_entregas),
+    hoverinfo = "text",
+    name = "Cantidad total"
+  ) |>
+  layout(
+    title = list(text = "Insumos Entregados por Tipo", font = list(color = "#2D6A4F", size = 15)),
+    xaxis = list(title = "Tipo de insumo"),
+    yaxis = list(title = "Cantidad total"),
+    plot_bgcolor = "#FAFAFA", paper_bgcolor = "white"
+  )
+} else {
+  cat("📌 No hay datos de insumos con cantidad registrada en el período seleccionado.")
+}
+```
+
+## Resumen de Seguridad Alimentaria
+
+```{r seg-tabla}
+# Mostrar columnas relevantes si existen
+seg_show <- seg_alim_raw
+
+# Detectar automáticamente columnas de fecha y comunidad
+fecha_col <- seg_cols[str_detect(str_to_lower(seg_cols), "fecha|date")][1]
+com_col   <- seg_cols[str_detect(str_to_lower(seg_cols), "comunidad|community")][1]
+
+if (!is.na(fecha_col)) {
+  seg_show <- seg_show |> arrange(desc(.data[[fecha_col]]))
+}
+
+datatable(
+  seg_show,
+  filter     = "top",
+  extensions = c("Buttons", "Scroller"),
+  options    = list(
+    dom = "Bfrtip", buttons = c("csv", "excel"),
+    scrollY = 350, scroller = TRUE,
+    language = list(url = "//cdn.datatables.net/plug-ins/1.10.11/i18n/Spanish.json")
+  ),
+  class = "compact stripe hover",
+  caption = "Registros de seguridad alimentaria"
+)
+```
+
+---
+
+# Evidencias de Jaguar {#sec-jaguar}
+
+> **Fuente:** `Evidencias_jaguar.csv` · Registros de avistamientos, huellas y cámaras trampa
+
+```{r jaguar-analisis}
+jag_cols <- names(jaguar_raw)
+```
+
+```{r jaguar-plot}
+if (nrow(jaguar_raw) > 0) {
+  # Detectar columnas clave
+  fecha_j  <- jag_cols[str_detect(str_to_lower(jag_cols), "fecha|date")][1]
+  tipo_j   <- jag_cols[str_detect(str_to_lower(jag_cols), "tipo|tipo_evidencia|evidencia|type")][1]
+  com_j    <- jag_cols[str_detect(str_to_lower(jag_cols), "comunidad|community")][1]
+
+  # Si hay columna de tipo de evidencia
+  if (!is.na(tipo_j)) {
+    jag_tipo <- jaguar_raw |>
+      filter(!is.na(.data[[tipo_j]]) & .data[[tipo_j]] != "") |>
+      count(.data[[tipo_j]], name = "n") |>
+      rename(Tipo = 1)
+
+    p_jag <- plot_ly(jag_tipo,
+      labels = ~Tipo, values = ~n,
+      type = "pie",
+      hole = 0.4,
+      textinfo = "label+value+percent",
+      marker = list(colors = unname(pal_pachamama[c("verde_bosque", "tierra", "azul", "naranja", "amarillo")])),
+      hovertemplate = "<b>%{label}</b><br>N: %{value}<br>%{percent}<extra></extra>"
+    ) |>
+    layout(
+      title = list(text = "Tipo de Evidencia de Jaguar", font = list(color = "#2D6A4F", size = 15)),
+      plot_bgcolor = "white", paper_bgcolor = "white"
+    )
+    p_jag
+  }
+}
+```
+
+```{r jaguar-serie}
+if (nrow(jaguar_raw) > 0 && !is.na(fecha_j)) {
+  jag_serie <- jaguar_raw |>
+    mutate(Fecha_j = as.Date(.data[[fecha_j]]),
+           YearMon_j = floor_date(Fecha_j, "month")) |>
+    filter(!is.na(Fecha_j)) |>
+    count(YearMon_j, name = "n")
+
+  if (nrow(jag_serie) > 0) {
+    plot_ly(jag_serie,
+      x = ~YearMon_j, y = ~n,
+      type = "bar",
+      marker = list(color = pal_pachamama["verde_bosque"],
+                    line = list(color = pal_pachamama["verde_claro"], width = 1)),
+      text = ~paste0(format(YearMon_j, "%B %Y"), "<br>Evidencias: ", n),
+      hoverinfo = "text"
+    ) |>
+    layout(
+      title = list(text = "Evidencias de Jaguar por Mes", font = list(color = "#2D6A4F", size = 15)),
+      xaxis = list(title = ""),
+      yaxis = list(title = "N° evidencias"),
+      plot_bgcolor = "#FAFAFA", paper_bgcolor = "white"
+    )
+  }
+}
+```
+
+## Tabla de Registros de Jaguar
+
+```{r jaguar-tabla}
+datatable(
+  jaguar_raw,
+  filter     = "top",
+  extensions = c("Buttons", "Scroller"),
+  options    = list(
+    dom = "Bfrtip", buttons = c("csv", "excel"),
+    scrollY = 350, scroller = TRUE,
+    language = list(url = "//cdn.datatables.net/plug-ins/1.10.11/i18n/Spanish.json")
+  ),
+  class = "compact stripe hover",
+  caption = "Registros de evidencias de jaguar"
+)
+```
+
+---
+
+# Socialización de Acuerdos {#sec-socializacion}
+
+> **Fuente:** `Socialización_acuerdos.csv` · Registro de socialización de acuerdos comunitarios de conservación
+
+```{r social-analisis}
+soc_cols <- names(social_raw)
+
+fecha_s <- soc_cols[str_detect(str_to_lower(soc_cols), "fecha|date")][1]
+com_s   <- soc_cols[str_detect(str_to_lower(soc_cols), "comunidad|community")][1]
+
+if (!is.na(fecha_s) & nrow(social_raw) > 0) {
+  soc_serie <- social_raw |>
+    mutate(
+      Fecha_s  = as.Date(.data[[fecha_s]]),
+      YearMon_s = floor_date(Fecha_s, "month")
+    ) |>
+    filter(!is.na(Fecha_s))
+
+  if (!is.na(com_s)) {
+    soc_count <- soc_serie |> count(YearMon_s, .data[[com_s]], name = "n") |> rename(Comunidad = 2)
+    plot_ly(soc_count,
+      x = ~YearMon_s, y = ~n, color = ~Comunidad,
+      colors = unname(pal_pachamama[c("verde_bosque", "tierra", "azul", "naranja")]),
+      type = "bar",
+      hovertemplate = "<b>%{fullData.name}</b><br>%{x|%B %Y}<br>N: %{y}<extra></extra>"
+    ) |>
+    layout(
+      barmode = "stack",
+      title = list(text = "Socializaciones de Acuerdos por Mes y Comunidad", font = list(color = "#2D6A4F", size = 15)),
+      xaxis = list(title = "", rangeslider = list(visible = TRUE)),
+      yaxis = list(title = "N° registros"),
+      legend = list(orientation = "h"),
+      plot_bgcolor = "#FAFAFA", paper_bgcolor = "white"
+    )
+  }
+}
+```
+
+## Tabla de Socializaciones
+
+```{r social-tabla}
+datatable(
+  social_raw,
+  filter     = "top",
+  extensions = c("Buttons", "Scroller"),
+  options    = list(
+    dom = "Bfrtip", buttons = c("csv", "excel"),
+    scrollY = 350, scroller = TRUE,
+    language = list(url = "//cdn.datatables.net/plug-ins/1.10.11/i18n/Spanish.json")
+  ),
+  class = "compact stripe hover",
+  caption = "Registros de socialización de acuerdos"
+)
+```
+
+---
+
+# Indicadores Propuestos {#sec-indicadores}
+
+::: {.callout-important}
+## 💡 Indicadores No Monitoreados — Propuesta
+
+Los siguientes indicadores emergen del análisis de datos disponibles y **no están siendo calculados actualmente** en los notebooks EDA. Se recomienda su incorporación al siguiente ciclo de monitoreo.
+:::
+
+```{r indicadores-propuestos}
+# ── 1. Índice de Regularidad de Asambleas (IRA) ──────────────────────────────
+# Proporción de meses con al menos una asamblea / total de meses del período
+if (nrow(asm) > 0) {
+  meses_proyecto <- interval(min(asm$Fecha, na.rm=TRUE), max(asm$Fecha, na.rm=TRUE)) %/% months(1) + 1
+  meses_con_asm  <- asm |> count(YearMon) |> nrow()
+  IRA <- round(100 * meses_con_asm / meses_proyecto, 1)
+} else { IRA <- NA; meses_proyecto <- 0; meses_con_asm <- 0 }
+
+# ── 2. Índice de Equidad de Género en Participación (IEGP) ───────────────────
+hom_tot <- sum(as.numeric(asm$Numero_hombres), na.rm=TRUE)
+muj_tot <- sum(as.numeric(asm$Numero_mujeres), na.rm=TRUE)
+part_tot_gen <- hom_tot + muj_tot
+IEGP <- if (part_tot_gen > 0) round(100 * muj_tot / part_tot_gen, 1) else NA
+
+# ── 3. Intensidad de Capacitación (IC) ───────────────────────────────────────
+# Horas de capacitación por participante
+IC <- if (nrow(cap) > 0 && sum(cap$Participantes, na.rm=TRUE) > 0) {
+  round(sum(cap$Horas, na.rm=TRUE) / sum(cap$Participantes, na.rm=TRUE), 2)
+} else { NA }
+
+# ── 4. Diversidad Temática de Capacitaciones (DTC) ───────────────────────────
+n_temas <- cap |>
+  filter(!is.na(Capacidad_adquirida) & Capacidad_adquirida != "") |>
+  pull(Capacidad_adquirida) |>
+  unique() |>
+  length()
+
+# ── 5. Tasa de Crecimiento de Actividades ─────────────────────────────────────
+act_anual <- bind_rows(
+  asm |> count(Anio, name = "n") |> mutate(Tipo = "Asambleas"),
+  cap |> count(Anio, name = "n") |> mutate(Tipo = "Capacitaciones")
+) |> group_by(Anio) |> summarise(Total = sum(n), .groups = "drop") |> arrange(Anio)
+
+tasa_crec <- if (nrow(act_anual) >= 2) {
+  primero <- act_anual$Total[1]
+  ultimo  <- act_anual$Total[nrow(act_anual)]
+  round(100 * (ultimo - primero) / primero, 1)
+} else { NA }
+
+# ── Tabla resumen indicadores ─────────────────────────────────────────────────
+ind_df <- tibble(
+  Indicador = c(
+    "Índice de Regularidad de Asambleas (IRA)",
+    "Índice de Equidad de Género en Participación (IEGP)",
+    "Intensidad de Capacitación (IC)",
+    "Diversidad Temática de Capacitaciones (DTC)",
+    "Tasa de Crecimiento de Actividades"
+  ),
+  Fórmula = c(
+    "Meses con asamblea / Total meses × 100",
+    "Mujeres / (Hombres + Mujeres) × 100",
+    "Horas totales / Total participantes",
+    "N° temas únicos registrados",
+    "(Actividades último año − primero) / primero × 100"
+  ),
+  Valor = c(
+    paste0(IRA, "%"),
+    paste0(IEGP, "%"),
+    paste0(IC, " hrs/persona"),
+    paste0(n_temas, " temas"),
+    paste0(tasa_crec, "%")
+  ),
+  Meta_sugerida = c(
+    "≥ 80%",
+    "45–55% (paridad)",
+    "≥ 2 hrs/persona",
+    "≥ 5 temas",
+    "Crecimiento positivo"
+  ),
+  Estado = c(
+    ifelse(!is.na(IRA) & IRA >= 80, "✅", ifelse(!is.na(IRA) & IRA >= 60, "🟡", "🔴")),
+    ifelse(!is.na(IEGP) & IEGP >= 45 & IEGP <= 55, "✅", "🟡"),
+    ifelse(!is.na(IC) & IC >= 2, "✅", "🟡"),
+    ifelse(n_temas >= 5, "✅", "🟡"),
+    ifelse(!is.na(tasa_crec) & tasa_crec > 0, "✅", "🔴")
+  )
+)
+
+datatable(
+  ind_df,
+  options = list(dom = "t", pageLength = 10, language = list(url = "//cdn.datatables.net/plug-ins/1.10.11/i18n/Spanish.json")),
+  class   = "compact stripe",
+  rownames = FALSE,
+  caption = "Indicadores propuestos para el Proyecto de Conservación Biocultural"
+) |>
+formatStyle("Estado",
+  backgroundColor = styleEqual(c("✅", "🟡", "🔴"), c("#D1FAE5", "#FEF3C7", "#FEE2E2"))
+)
+```
+
+## Visualización de Indicadores
+
+```{r radar-indicadores}
+# Radar chart de cumplimiento
+radar_val <- c(
+  IRA_norm      = if(!is.na(IRA)) pmin(IRA / 80, 1) * 100 else 0,
+  IEGP_norm     = if(!is.na(IEGP)) pmin(abs(IEGP - 50) / 5, 1) |> {\(x) (1-x) * 100}() else 0,
+  IC_norm       = if(!is.na(IC)) pmin(IC / 2, 1) * 100 else 0,
+  DTC_norm      = pmin(n_temas / 5, 1) * 100,
+  Crec_norm     = if(!is.na(tasa_crec)) pmin(pmax(tasa_crec, 0) / 30, 1) * 100 else 0
+)
+
+etiquetas <- c("Regularidad<br>Asambleas", "Equidad<br>Género", "Intensidad<br>Capacitación", "Diversidad<br>Temática", "Crecimiento<br>Actividades")
+
+plot_ly(
+  type = "scatterpolar",
+  r    = c(radar_val, radar_val[1]),
+  theta = c(etiquetas, etiquetas[1]),
+  fill  = "toself",
+  fillcolor = "rgba(45,106,79,0.25)",
+  line  = list(color = pal_pachamama["verde_bosque"], width = 2.5),
+  mode  = "lines+markers",
+  marker = list(size = 8, color = pal_pachamama["verde_bosque"]),
+  name  = "Cumplimiento (%)"
+) |>
+layout(
+  polar  = list(radialaxis = list(visible = TRUE, range = c(0, 100))),
+  title  = list(text = "Cumplimiento de Indicadores Propuestos (%)", font = list(color = "#2D6A4F", size = 15)),
+  paper_bgcolor = "white",
+  showlegend = FALSE
+)
+```
+
+---
+
+# Análisis Comparativo por Comunidad {#sec-comparativo}
+
+```{r comparativo-comunidades}
+# Tabla comparativa por comunidad
+comp_asm <- asm |>
+  filter(!is.na(Comunidad)) |>
+  group_by(Comunidad) |>
+  summarise(
+    N_Asambleas       = n(),
+    Participantes_Asm = sum(Participantes, na.rm = TRUE),
+    Pct_Muj_Asm       = round(100 * sum(as.numeric(Numero_mujeres), na.rm=TRUE) /
+                                pmax(sum(Participantes, na.rm=TRUE), 1), 1),
+    .groups = "drop"
+  )
+
+comp_cap <- cap |>
+  filter(!is.na(Comunidad)) |>
+  group_by(Comunidad) |>
+  summarise(
+    N_Capacitaciones  = n(),
+    Horas_Cap         = sum(Horas, na.rm = TRUE),
+    Participantes_Cap = sum(Participantes, na.rm = TRUE),
+    .groups = "drop"
+  )
+
+comp_total <- full_join(comp_asm, comp_cap, by = "Comunidad") |>
+  mutate(across(where(is.numeric), ~replace_na(., 0)))
+
+datatable(
+  comp_total,
+  options = list(dom = "ft", pageLength = 10,
+                 language = list(url = "//cdn.datatables.net/plug-ins/1.10.11/i18n/Spanish.json")),
+  class   = "compact stripe hover",
+  caption = "Resumen comparativo por comunidad"
+) |>
+formatStyle(c("N_Asambleas","N_Capacitaciones"), background = styleColorBar(c(0,20), "#B7E4C7")) |>
+formatStyle("Horas_Cap", background = styleColorBar(c(0,max(comp_total$Horas_Cap,0)+1), "#FFD166")) |>
+formatStyle("Pct_Muj_Asm",
+  background = styleColorBar(c(0,100), "#F9C0C0"),
+  color = styleInterval(c(45,55), c("red","black","red"))
+)
+```
+
+```{r heatmap-actividad}
+# Heatmap: actividad por mes × comunidad
+heatmap_df <- bind_rows(
+  asm |> mutate(Tipo = "Asm"),
+  cap |> mutate(Tipo = "Cap")
+) |>
+  filter(!is.na(Comunidad) & !is.na(YearMon)) |>
+  count(Mes = format(YearMon, "%Y-%m"), Comunidad) |>
+  complete(Mes, Comunidad, fill = list(n = 0))
+
+plot_ly(heatmap_df,
+  x = ~Comunidad, y = ~Mes, z = ~n,
+  type = "heatmap",
+  colorscale = list(c(0,"#ECFDF5"), c(0.5,"#40916C"), c(1,"#1B4332")),
+  hovertemplate = "<b>%{x}</b><br>%{y}<br>Actividades: %{z}<extra></extra>"
+) |>
+layout(
+  title = list(text = "Mapa de Calor: Actividades por Mes y Comunidad", font = list(color = "#2D6A4F", size = 15)),
+  xaxis = list(title = ""),
+  yaxis = list(title = "Mes", autorange = "reversed"),
+  plot_bgcolor = "white", paper_bgcolor = "white"
+)
+```
+
+---
+
+# Notas Metodológicas y Próximos Pasos {#sec-notas}
+
+::: {.callout-note}
+## Estructura del Repositorio
+
+Este reporte se basa en el proyecto `daningmontano/bioculturalreport`. Los datos provienen de formularios KoboToolbox operados por monitores comunitarios Achuar en las comunidades de **Sharamentsa**, **Napurak**, **Shuinmamus** y **Wayusentsa** (cuencas del Pastaza, Ecuador).
+
+**Archivos de datos:** `Data/Asambleas.csv`, `Data/Capacitaciones.csv`, `Data/df_seguridad_alimentaria.csv`, `Data/df_entrega_insumos.csv`, `Data/Evidencias_jaguar.csv`, `Data/Socialización_acuerdos.csv`
+
+**Para regenerar el informe filtrando por comunidad:**
+```
+quarto render Reporte/reporte_biocultural.qmd \
+  -P comunidad:Wayusentsa \
+  -P anio_inicio:2024 \
+  -P anio_fin:2025
+```
+:::
+
+::: {.callout-tip}
+## 🔄 Recomendaciones para Próximas Iteraciones
+
+1. **Convertir a Shiny Document** para filtros 100% interactivos en tiempo real sin requerir re-render.
+2. **Coordenadas GPS** en evidencias de jaguar para mapas Leaflet interactivos.
+3. **Integrar datos de mingas** (`df_mingas`) para el indicador de esfuerzo territorial.
+4. **Panel de alertas** automáticas cuando la participación de mujeres baje de 40%.
+5. **Integración con Forest Watcher / GLAD alerts** para correlacionar actividad de monitoreo con deforestación.
+:::
+
+---
+
+*Reporte generado automáticamente con **Quarto** + **R** · `r format(Sys.time(), "%d/%m/%Y %H:%M")` · Fundación Pachamama*

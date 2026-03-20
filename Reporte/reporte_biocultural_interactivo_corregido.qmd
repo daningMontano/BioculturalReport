@@ -1,0 +1,790 @@
+---
+title: "Reporte interactivo de monitoreo biocultural"
+subtitle: "Reconstrucción analítica desde el ingest del repositorio"
+format:
+  html:
+    toc: true
+    toc-depth: 3
+    page-layout: full
+    theme: flatly
+    code-fold: true
+    code-summary: "Ver código"
+server: shiny
+execute:
+  echo: false
+  warning: false
+  message: false
+---
+
+```{r}
+#| label: setup
+library(shiny)
+library(bslib)
+library(dplyr)
+library(tidyr)
+library(stringr)
+library(forcats)
+library(lubridate)
+library(ggplot2)
+library(plotly)
+library(DT)
+library(leaflet)
+library(glue)
+
+`%||%` <- function(x, y) if (is.null(x) || length(x) == 0) y else x
+
+repo_root <- normalizePath(file.path(getwd(), ".."), winslash = "/", mustWork = FALSE)
+data_dir  <- file.path(repo_root, "Data")
+eda_dir   <- file.path(repo_root, "EDA")
+plots_dir <- file.path(eda_dir, "Plots")
+theme_r   <- file.path(eda_dir, "Functions", "plot_themes.R")
+
+if (file.exists(theme_r)) {
+  source(theme_r, local = TRUE)
+}
+
+gg_theme <- if (exists("theme_pachamama")) theme_pachamama() else theme_minimal(base_size = 12)
+
+normalizar_texto <- function(x) {
+  x <- as.character(x)
+  x <- str_replace_all(x, "\\u00a0", " ")
+  x <- str_squish(x)
+  x[x %in% c("", "NA", "NaN", "NULL")] <- NA
+  x
+}
+
+leer_csv_seguro <- function(nombre) {
+  ruta <- file.path(data_dir, nombre)
+  if (!file.exists(ruta)) return(NULL)
+  out <- read.csv(ruta, stringsAsFactors = FALSE, na.strings = c("", "NA"))
+  out <- out |> mutate(across(where(is.character), normalizar_texto))
+  if ("Fecha" %in% names(out)) out$Fecha <- as.Date(out$Fecha)
+  out
+}
+
+agregar_tiempo <- function(df) {
+  if (is.null(df)) return(NULL)
+  if (!"Fecha" %in% names(df)) return(df)
+  df |>
+    mutate(
+      Anio = year(Fecha),
+      Mes = floor_date(Fecha, unit = "month")
+    )
+}
+
+asambleas <- leer_csv_seguro("Asambleas.csv") |>
+  agregar_tiempo() |>
+  mutate(
+    Numero_hombres = suppressWarnings(as.numeric(Numero_hombres)),
+    Numero_mujeres = suppressWarnings(as.numeric(Numero_mujeres)),
+    Numero_dias    = suppressWarnings(as.numeric(Numero_dias)),
+    Total_participantes = rowSums(cbind(Numero_hombres, Numero_mujeres), na.rm = TRUE)
+  )
+
+capacitaciones <- leer_csv_seguro("Capacitaciones.csv") |>
+  agregar_tiempo() |>
+  mutate(
+    Numero_hombres = suppressWarnings(as.numeric(Numero_hombres)),
+    Numero_mujeres = suppressWarnings(as.numeric(Numero_mujeres)),
+    Numero_horas_capacitacion = suppressWarnings(as.numeric(Numero_horas_capacitacion)),
+    Total_participantes = rowSums(cbind(Numero_hombres, Numero_mujeres), na.rm = TRUE)
+  )
+
+seguridad_alimentaria <- leer_csv_seguro("df_seguridad_alimentaria.csv")
+entrega_insumos       <- leer_csv_seguro("df_entrega_insumos.csv") |>
+  mutate(N_insumos = suppressWarnings(as.numeric(N_insumos)))
+
+evidencias_jaguar <- leer_csv_seguro("Evidencias_jaguar.csv") |>
+  agregar_tiempo() |>
+  mutate(
+    N_jaguares = suppressWarnings(as.numeric(N_jaguares)),
+    Latitud    = suppressWarnings(as.numeric(Latitud)),
+    Longitud   = suppressWarnings(as.numeric(Longitud)),
+    Conflicto_limpio = case_when(
+      is.na(Conflictos_jaguar) ~ "Sin dato",
+      str_to_lower(Conflictos_jaguar) %in% c("no", "ninguna", "no encontramos nigun conflicto con el jagur") ~ "No reportado",
+      TRUE ~ "Reportado"
+    )
+  )
+
+socializacion <- leer_csv_seguro("Socialización_acuerdos.csv") |>
+  agregar_tiempo()
+
+# Eventos únicos para no duplicar personas/horas cuando un mismo _id tiene múltiples descripciones
+asambleas_eventos <- if (!is.null(asambleas)) {
+  asambleas |> distinct(_id, .keep_all = TRUE)
+} else {
+  NULL
+}
+capacitaciones_eventos <- if (!is.null(capacitaciones)) {
+  capacitaciones |> distinct(_id, .keep_all = TRUE)
+} else {
+  NULL
+}
+
+# Inventario de archivos del reporte
+inventario_archivos <- tibble::tibble(
+  archivo = c(
+    "../Data/Asambleas.csv",
+    "../Data/Capacitaciones.csv",
+    "../Data/df_seguridad_alimentaria.csv",
+    "../Data/df_entrega_insumos.csv",
+    "../Data/Evidencias_jaguar.csv",
+    "../Data/Socialización_acuerdos.csv",
+    "../EDA/Functions/plot_themes.R"
+  ),
+  existe = file.exists(file.path(getwd(), archivo))
+)
+
+# Controles globales
+obtener_fechas <- function(...) {
+  xs <- list(...)
+  fechas <- unlist(lapply(xs, function(z) if (!is.null(z) && "Fecha" %in% names(z)) z$Fecha else NULL))
+  fechas <- as.Date(fechas)
+  fechas <- fechas[!is.na(fechas)]
+  range(fechas)
+}
+
+obtener_anios <- function(...) {
+  xs <- list(...)
+  anios <- unlist(lapply(xs, function(z) if (!is.null(z) && "Anio" %in% names(z)) z$Anio else NULL))
+  sort(unique(anios[!is.na(anios)]))
+}
+
+obtener_comunidades <- function(...) {
+  xs <- list(...)
+  comunidades <- unlist(lapply(xs, function(z) if (!is.null(z) && "Comunidad" %in% names(z)) z$Comunidad else NULL))
+  sort(unique(comunidades[!is.na(comunidades)]))
+}
+
+limites_fecha <- obtener_fechas(asambleas, capacitaciones, evidencias_jaguar, socializacion)
+anios_disponibles <- obtener_anios(asambleas, capacitaciones, evidencias_jaguar, socializacion)
+comunidades_disponibles <- obtener_comunidades(asambleas, capacitaciones, evidencias_jaguar, socializacion)
+
+filtrar_contexto <- function(df) {
+  if (is.null(df)) return(NULL)
+  out <- df
+  if ("Fecha" %in% names(out) && !is.null(input$fecha)) {
+    out <- out |> filter(!is.na(Fecha), Fecha >= input$fecha[1], Fecha <= input$fecha[2])
+  }
+  if ("Anio" %in% names(out) && !is.null(input$anio) && length(input$anio) > 0) {
+    out <- out |> filter(as.character(Anio) %in% input$anio)
+  }
+  if ("Comunidad" %in% names(out) && !is.null(input$comunidad) && length(input$comunidad) > 0) {
+    out <- out |> filter(Comunidad %in% input$comunidad)
+  }
+  out
+}
+
+usar_eventos_unicos <- function(df_eventos, df_detalle = NULL) {
+  if (isTRUE(input$evitar_doble_conteo)) {
+    df_eventos
+  } else {
+    df_detalle %||% df_eventos
+  }
+}
+
+serie_general <- function() {
+  partes <- list()
+
+  if (!is.null(asambleas_eventos)) {
+    partes[[length(partes) + 1]] <- filtrar_contexto(asambleas_eventos) |>
+      transmute(Fecha, Mes, Comunidad, modulo = "Asambleas", n = 1)
+  }
+
+  if (!is.null(capacitaciones_eventos)) {
+    partes[[length(partes) + 1]] <- filtrar_contexto(capacitaciones_eventos) |>
+      transmute(Fecha, Mes, Comunidad, modulo = "Capacitaciones", n = 1)
+  }
+
+  if (!is.null(socializacion)) {
+    partes[[length(partes) + 1]] <- filtrar_contexto(socializacion) |>
+      transmute(Fecha, Mes, Comunidad, modulo = "Gobernanza", n = 1)
+  }
+
+  if (!is.null(evidencias_jaguar)) {
+    partes[[length(partes) + 1]] <- filtrar_contexto(evidencias_jaguar) |>
+      transmute(Fecha, Mes, Comunidad, modulo = "Jaguar", n = 1)
+  }
+
+  if (length(partes) == 0) {
+    return(tibble::tibble(Fecha = as.Date(character()), Mes = as.Date(character()), Comunidad = character(), modulo = character(), n = numeric()))
+  }
+
+  dplyr::bind_rows(partes)
+}
+
+css_cards <- HTML(
+  ".metric-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:0.8rem;margin:0.8rem 0 1.2rem 0;}\n",
+  ".metric-card{background:#f8f9fa;border:1px solid #e5e7eb;border-radius:12px;padding:0.9rem 1rem;}\n",
+  ".metric-card .k{font-size:0.85rem;color:#4b5563;margin-bottom:0.2rem;}\n",
+  ".metric-card .v{font-size:1.5rem;font-weight:700;line-height:1.1;}\n",
+  ".metric-card .s{font-size:0.8rem;color:#6b7280;margin-top:0.25rem;}"
+)
+```
+
+```{r}
+#| label: estilos-html
+#| results: asis
+cat(as.character(tags$style(css_cards)))
+```
+
+::: {.sidebar}
+```{r}
+selectizeInput(
+  "anio", "Año",
+  choices = as.character(anios_disponibles),
+  selected = as.character(anios_disponibles),
+  multiple = TRUE
+)
+
+dateRangeInput(
+  "fecha", "Rango de fechas",
+  start = limites_fecha[1],
+  end   = limites_fecha[2],
+  min   = limites_fecha[1],
+  max   = limites_fecha[2]
+)
+
+selectizeInput(
+  "comunidad", "Comunidad",
+  choices = comunidades_disponibles,
+  selected = comunidades_disponibles,
+  multiple = TRUE
+)
+
+checkboxInput(
+  "evitar_doble_conteo",
+  "Evitar doble conteo en métricas de personas, días y horas",
+  value = TRUE
+)
+```
+:::
+
+## Alcance y limitaciones del ingest
+
+Este reporte reconstruye el análisis a partir de los CSV disponibles en `Data/` y del archivo `EDA/Functions/plot_themes.R`. Las carpetas de `EDA/Plots/` evidencian que existieron salidas interactivas previas para series temporales de `Pachamama`, `asambleas`, `gobernanza`, `mingas` y `mingas_esfuerzo`, pero en el ingest no están incluidos los notebooks fuente. Por eso este `.qmd` recompone un tablero analítico equivalente con los datos actualmente presentes y deja señaladas las limitaciones donde faltan tablas padre con contexto temporal o espacial.
+
+## Verificación de rutas
+
+```{r}
+DT::datatable(
+  inventario_archivos,
+  rownames = FALSE,
+  options = list(dom = "tip", pageLength = 10)
+)
+```
+
+## Resumen general
+
+```{r}
+req(input$anio, input$fecha, input$comunidad)
+
+a0 <- filtrar_contexto(asambleas_eventos)
+c0 <- filtrar_contexto(capacitaciones_eventos)
+j0 <- filtrar_contexto(evidencias_jaguar)
+g0 <- filtrar_contexto(socializacion)
+
+total_asambleas <- nrow(a0 %||% data.frame())
+total_capacitaciones <- nrow(c0 %||% data.frame())
+total_jaguar <- nrow(j0 %||% data.frame())
+total_gobernanza <- nrow(g0 %||% data.frame())
+
+total_participantes_asambleas <- sum((a0$Numero_hombres %||% 0) + (a0$Numero_mujeres %||% 0), na.rm = TRUE)
+total_participantes_cap <- sum((c0$Numero_hombres %||% 0) + (c0$Numero_mujeres %||% 0), na.rm = TRUE)
+total_horas_cap <- sum(c0$Numero_horas_capacitacion %||% 0, na.rm = TRUE)
+comunidades_activas <- length(unique(c(
+  a0$Comunidad %||% character(),
+  c0$Comunidad %||% character(),
+  j0$Comunidad %||% character(),
+  g0$Comunidad %||% character()
+)))
+
+cards <- div(
+  class = "metric-grid",
+  div(class = "metric-card", div(class = "k", "Asambleas"), div(class = "v", format(total_asambleas, big.mark = ",")), div(class = "s", "Eventos únicos filtrados")),
+  div(class = "metric-card", div(class = "k", "Capacitaciones"), div(class = "v", format(total_capacitaciones, big.mark = ",")), div(class = "s", "Eventos únicos filtrados")),
+  div(class = "metric-card", div(class = "k", "Evidencias de jaguar"), div(class = "v", format(total_jaguar, big.mark = ",")), div(class = "s", "Registros filtrados")),
+  div(class = "metric-card", div(class = "k", "Gobernanza"), div(class = "v", format(total_gobernanza, big.mark = ",")), div(class = "s", "Eventos de socialización")),
+  div(class = "metric-card", div(class = "k", "Participantes en asambleas"), div(class = "v", format(total_participantes_asambleas, big.mark = ",")), div(class = "s", "Suma hombres + mujeres")),
+  div(class = "metric-card", div(class = "k", "Participantes en capacitaciones"), div(class = "v", format(total_participantes_cap, big.mark = ",")), div(class = "s", "Suma hombres + mujeres")),
+  div(class = "metric-card", div(class = "k", "Horas de capacitación"), div(class = "v", format(total_horas_cap, big.mark = ",")), div(class = "s", "Suma de horas reportadas")),
+  div(class = "metric-card", div(class = "k", "Comunidades activas"), div(class = "v", format(comunidades_activas, big.mark = ",")), div(class = "s", "Bajo filtros globales"))
+)
+
+cards
+```
+
+## Serie temporal general {.tabset}
+
+### Eventos por mes
+
+```{r}
+req(input$anio, input$fecha, input$comunidad)
+
+df <- serie_general() |>
+  group_by(Mes, modulo) |>
+  summarise(registros = sum(n), .groups = "drop")
+
+validate(need(nrow(df) > 0, "No hay datos para los filtros seleccionados."))
+
+p <- ggplot(df, aes(Mes, registros, color = modulo, text = glue("Mes: {Mes}<br>Módulo: {modulo}<br>Registros: {registros}"))) +
+  geom_line(linewidth = 1) +
+  geom_point(size = 2) +
+  labs(x = NULL, y = "Número de registros", color = "Módulo") +
+  gg_theme
+
+ggplotly(p, tooltip = "text")
+```
+
+### Eventos por comunidad y módulo
+
+```{r}
+req(input$anio, input$fecha, input$comunidad)
+
+df <- serie_general() |>
+  group_by(Comunidad, modulo) |>
+  summarise(registros = sum(n), .groups = "drop")
+
+validate(need(nrow(df) > 0, "No hay datos para los filtros seleccionados."))
+
+p <- ggplot(df, aes(fct_reorder(Comunidad, registros, .fun = sum), registros, fill = modulo,
+                    text = glue("Comunidad: {Comunidad}<br>Módulo: {modulo}<br>Registros: {registros}"))) +
+  geom_col(position = "stack") +
+  coord_flip() +
+  labs(x = NULL, y = "Número de registros", fill = "Módulo") +
+  gg_theme
+
+ggplotly(p, tooltip = "text")
+```
+
+### Tabla mensual
+
+```{r}
+req(input$anio, input$fecha, input$comunidad)
+
+df <- serie_general() |>
+  mutate(Mes = format(Mes, "%Y-%m")) |>
+  count(Mes, modulo, name = "registros") |>
+  tidyr::pivot_wider(names_from = modulo, values_from = registros, values_fill = 0) |>
+  arrange(Mes)
+
+DT::datatable(df, rownames = FALSE, options = list(pageLength = 12, scrollX = TRUE))
+```
+
+## Asambleas {.tabset}
+
+### Serie temporal de asambleas
+
+```{r}
+req(input$anio, input$fecha, input$comunidad)
+
+df <- filtrar_contexto(asambleas_eventos) |>
+  count(Mes, name = "n_asambleas")
+
+validate(need(nrow(df) > 0, "No hay asambleas para los filtros seleccionados."))
+
+p <- ggplot(df, aes(Mes, n_asambleas, text = glue("Mes: {Mes}<br>Asambleas: {n_asambleas}"))) +
+  geom_line(linewidth = 1.1, color = "#2C7FB8") +
+  geom_point(size = 2.2, color = "#2C7FB8") +
+  labs(x = NULL, y = "Número de asambleas") +
+  gg_theme
+
+ggplotly(p, tooltip = "text")
+```
+
+### Tipo de asamblea por comunidad
+
+```{r}
+req(input$anio, input$fecha, input$comunidad)
+
+df <- filtrar_contexto(asambleas_eventos) |>
+  count(Comunidad, Tipo_asamblea, name = "n")
+
+validate(need(nrow(df) > 0, "No hay datos para los filtros seleccionados."))
+
+p <- ggplot(df, aes(fct_reorder(Comunidad, n, .fun = sum), n, fill = Tipo_asamblea,
+                    text = glue("Comunidad: {Comunidad}<br>Tipo: {Tipo_asamblea}<br>Asambleas: {n}"))) +
+  geom_col() +
+  coord_flip() +
+  labs(x = NULL, y = "Número de asambleas", fill = "Tipo") +
+  gg_theme
+
+ggplotly(p, tooltip = "text")
+```
+
+### Participación y proporción femenina
+
+```{r}
+req(input$anio, input$fecha, input$comunidad)
+
+df <- filtrar_contexto(asambleas_eventos) |>
+  group_by(Comunidad) |>
+  summarise(
+    hombres = sum(Numero_hombres, na.rm = TRUE),
+    mujeres = sum(Numero_mujeres, na.rm = TRUE),
+    participantes = sum(Total_participantes, na.rm = TRUE),
+    proporcion_femenina = ifelse(participantes > 0, mujeres / participantes, NA_real_),
+    .groups = "drop"
+  ) |>
+  pivot_longer(cols = c(hombres, mujeres), names_to = "sexo", values_to = "valor")
+
+validate(need(nrow(df) > 0, "No hay datos de participación para los filtros seleccionados."))
+
+p <- ggplot(df, aes(fct_reorder(Comunidad, valor, .fun = sum), valor, fill = sexo,
+                    text = glue("Comunidad: {Comunidad}<br>Sexo: {sexo}<br>Participantes: {valor}"))) +
+  geom_col() +
+  coord_flip() +
+  labs(x = NULL, y = "Participantes acumulados", fill = NULL) +
+  gg_theme
+
+ggplotly(p, tooltip = "text")
+```
+
+### Detalle de asambleas
+
+```{r}
+req(input$anio, input$fecha, input$comunidad)
+
+df <- filtrar_contexto(asambleas) |>
+  select(Fecha, Comunidad, Monitor, Tipo_asamblea, Numero_hombres, Numero_mujeres, Numero_dias, Decision_principal)
+
+DT::datatable(df, rownames = FALSE, options = list(pageLength = 10, scrollX = TRUE))
+```
+
+## Capacitaciones {.tabset}
+
+### Serie temporal de capacitaciones
+
+```{r}
+req(input$anio, input$fecha, input$comunidad)
+
+df <- filtrar_contexto(capacitaciones_eventos) |>
+  count(Mes, name = "n_capacitaciones")
+
+validate(need(nrow(df) > 0, "No hay capacitaciones para los filtros seleccionados."))
+
+p <- ggplot(df, aes(Mes, n_capacitaciones, text = glue("Mes: {Mes}<br>Capacitaciones: {n_capacitaciones}"))) +
+  geom_line(linewidth = 1.1, color = "#1B9E77") +
+  geom_point(size = 2.2, color = "#1B9E77") +
+  labs(x = NULL, y = "Número de capacitaciones") +
+  gg_theme
+
+ggplotly(p, tooltip = "text")
+```
+
+### Participantes y horas por comunidad
+
+```{r}
+req(input$anio, input$fecha, input$comunidad)
+
+df <- filtrar_contexto(capacitaciones_eventos) |>
+  group_by(Comunidad) |>
+  summarise(
+    participantes = sum(Total_participantes, na.rm = TRUE),
+    horas = sum(Numero_horas_capacitacion, na.rm = TRUE),
+    horas_por_participante = ifelse(participantes > 0, horas / participantes, NA_real_),
+    .groups = "drop"
+  )
+
+validate(need(nrow(df) > 0, "No hay datos de capacitación para los filtros seleccionados."))
+
+p <- ggplot(df, aes(fct_reorder(Comunidad, horas), horas,
+                    text = glue("Comunidad: {Comunidad}<br>Horas: {round(horas, 2)}<br>Participantes: {participantes}<br>Horas por participante: {round(horas_por_participante, 3)}"))) +
+  geom_col(fill = "#1B9E77") +
+  coord_flip() +
+  labs(x = NULL, y = "Horas acumuladas de capacitación") +
+  gg_theme
+
+ggplotly(p, tooltip = "text")
+```
+
+### Temas más frecuentes reportados
+
+```{r}
+req(input$anio, input$fecha, input$comunidad)
+
+df <- filtrar_contexto(capacitaciones) |>
+  filter(!is.na(Capacidad_adquirida)) |>
+  count(Capacidad_adquirida, sort = TRUE, name = "n") |>
+  slice_head(n = 12)
+
+validate(need(nrow(df) > 0, "No hay descripciones de capacidades para los filtros seleccionados."))
+
+p <- ggplot(df, aes(fct_reorder(Capacidad_adquirida, n), n,
+                    text = glue("Tema: {Capacidad_adquirida}<br>Frecuencia: {n}"))) +
+  geom_col(fill = "#66A61E") +
+  coord_flip() +
+  labs(x = NULL, y = "Frecuencia") +
+  gg_theme
+
+ggplotly(p, tooltip = "text")
+```
+
+### Detalle de capacitaciones
+
+```{r}
+req(input$anio, input$fecha, input$comunidad)
+
+df <- filtrar_contexto(capacitaciones) |>
+  select(Fecha, Comunidad, Monitor, Numero_hombres, Numero_mujeres, Numero_horas_capacitacion, Capacidad_adquirida)
+
+DT::datatable(df, rownames = FALSE, options = list(pageLength = 10, scrollX = TRUE))
+```
+
+## Evidencias de jaguar {.tabset}
+
+### Serie temporal de evidencias
+
+```{r}
+req(input$anio, input$fecha, input$comunidad)
+
+df <- filtrar_contexto(evidencias_jaguar) |>
+  count(Mes, name = "n_evidencias")
+
+validate(need(nrow(df) > 0, "No hay evidencias para los filtros seleccionados."))
+
+p <- ggplot(df, aes(Mes, n_evidencias, text = glue("Mes: {Mes}<br>Evidencias: {n_evidencias}"))) +
+  geom_line(linewidth = 1.1, color = "#D95F02") +
+  geom_point(size = 2.2, color = "#D95F02") +
+  labs(x = NULL, y = "Número de evidencias") +
+  gg_theme
+
+ggplotly(p, tooltip = "text")
+```
+
+### Tipo de evidencia por comunidad
+
+```{r}
+req(input$anio, input$fecha, input$comunidad)
+
+df <- filtrar_contexto(evidencias_jaguar) |>
+  count(Comunidad, Tipo_evidencia, name = "n")
+
+validate(need(nrow(df) > 0, "No hay evidencias para los filtros seleccionados."))
+
+p <- ggplot(df, aes(fct_reorder(Comunidad, n, .fun = sum), n, fill = Tipo_evidencia,
+                    text = glue("Comunidad: {Comunidad}<br>Tipo: {Tipo_evidencia}<br>Registros: {n}"))) +
+  geom_col() +
+  coord_flip() +
+  labs(x = NULL, y = "Número de evidencias", fill = "Tipo") +
+  gg_theme
+
+ggplotly(p, tooltip = "text")
+```
+
+### Mapa de evidencias
+
+```{r}
+req(input$anio, input$fecha, input$comunidad)
+
+df <- filtrar_contexto(evidencias_jaguar) |>
+  filter(!is.na(Latitud), !is.na(Longitud))
+
+validate(need(nrow(df) > 0, "No hay coordenadas válidas para los filtros seleccionados."))
+
+pal <- colorFactor("Dark2", domain = df$Comunidad)
+
+leaflet(df) |>
+  addProviderTiles(providers$CartoDB.Positron) |>
+  addCircleMarkers(
+    lng = ~Longitud,
+    lat = ~Latitud,
+    radius = 5,
+    stroke = FALSE,
+    fillOpacity = 0.8,
+    color = ~pal(Comunidad),
+    popup = ~glue("<b>Fecha:</b> {Fecha}<br><b>Comunidad:</b> {Comunidad}<br><b>Tipo:</b> {Tipo_evidencia}<br><b>Descripción:</b> {Descripcion}")
+  ) |>
+  addLegend("bottomright", pal = pal, values = ~Comunidad, title = "Comunidad")
+```
+
+### Conflicto reportado
+
+```{r}
+req(input$anio, input$fecha, input$comunidad)
+
+df <- filtrar_contexto(evidencias_jaguar) |>
+  count(Conflicto_limpio, name = "n")
+
+validate(need(nrow(df) > 0, "No hay datos de conflicto para los filtros seleccionados."))
+
+p <- ggplot(df, aes(fct_reorder(Conflicto_limpio, n), n,
+                    text = glue("Categoría: {Conflicto_limpio}<br>Registros: {n}"))) +
+  geom_col(fill = "#7570B3") +
+  coord_flip() +
+  labs(x = NULL, y = "Número de registros") +
+  gg_theme
+
+ggplotly(p, tooltip = "text")
+```
+
+### Detalle de evidencias
+
+```{r}
+req(input$anio, input$fecha, input$comunidad)
+
+df <- filtrar_contexto(evidencias_jaguar) |>
+  select(Fecha, Comunidad, Monitor, Tipo_evidencia, N_jaguares, Conflictos_jaguar, Nombre_cientifico, Nombre_comun, Latitud, Longitud, Descripcion)
+
+DT::datatable(df, rownames = FALSE, options = list(pageLength = 10, scrollX = TRUE))
+```
+
+## Gobernanza y socialización de acuerdos {.tabset}
+
+### Serie temporal de socialización
+
+```{r}
+req(input$anio, input$fecha, input$comunidad)
+
+df <- filtrar_contexto(socializacion) |>
+  count(Mes, name = "n_socializaciones")
+
+validate(need(nrow(df) > 0, "No hay registros de socialización para los filtros seleccionados."))
+
+p <- ggplot(df, aes(Mes, n_socializaciones, text = glue("Mes: {Mes}<br>Eventos: {n_socializaciones}"))) +
+  geom_line(linewidth = 1.1, color = "#E6AB02") +
+  geom_point(size = 2.2, color = "#E6AB02") +
+  labs(x = NULL, y = "Número de eventos") +
+  gg_theme
+
+ggplotly(p, tooltip = "text")
+```
+
+### Forma de socialización
+
+```{r}
+req(input$anio, input$fecha, input$comunidad)
+
+df <- filtrar_contexto(socializacion) |>
+  count(Forma_socializacion, name = "n")
+
+validate(need(nrow(df) > 0, "No hay datos de forma de socialización para los filtros seleccionados."))
+
+p <- ggplot(df, aes(fct_reorder(Forma_socializacion, n), n,
+                    text = glue("Forma: {Forma_socializacion}<br>Eventos: {n}"))) +
+  geom_col(fill = "#E6AB02") +
+  coord_flip() +
+  labs(x = NULL, y = "Número de eventos") +
+  gg_theme
+
+ggplotly(p, tooltip = "text")
+```
+
+### Detalle de gobernanza
+
+```{r}
+req(input$anio, input$fecha, input$comunidad)
+
+df <- filtrar_contexto(socializacion) |>
+  select(Fecha, Comunidad, Monitor, Forma_socializacion, Otros_forma_socializacion)
+
+DT::datatable(df, rownames = FALSE, options = list(pageLength = 10, scrollX = TRUE))
+```
+
+## Mingas, seguridad alimentaria e insumos {.tabset}
+
+### Nota metodológica
+
+Con el ingest actual, `df_seguridad_alimentaria.csv` y `df_entrega_insumos.csv` no contienen columnas de `Fecha` ni `Comunidad`. Por tanto, esta sección no responde a los filtros globales de año, fecha y comunidad. Se presenta como análisis estructural de composición, y queda preparada para enriquecerse cuando se incorpore la tabla padre de mingas o de monitoreo productivo.
+
+### Distribución de líneas de seguridad alimentaria
+
+```{r}
+
+df <- seguridad_alimentaria |>
+  filter(!is.na(seguridad_alimentaria)) |>
+  count(seguridad_alimentaria, name = "n")
+
+validate(need(nrow(df) > 0, "No hay registros de seguridad alimentaria disponibles."))
+
+p <- ggplot(df, aes(fct_reorder(seguridad_alimentaria, n), n,
+                    text = glue("Línea: {seguridad_alimentaria}<br>Registros: {n}"))) +
+  geom_col(fill = "#4DAF4A") +
+  coord_flip() +
+  labs(x = NULL, y = "Número de registros") +
+  gg_theme
+
+ggplotly(p, tooltip = "text")
+```
+
+### Insumos entregados y volumen reportado
+
+```{r}
+
+df <- entrega_insumos |>
+  filter(!is.na(Insumos_entregados)) |>
+  group_by(Insumos_entregados) |>
+  summarise(
+    registros = n(),
+    volumen = sum(N_insumos, na.rm = TRUE),
+    .groups = "drop"
+  )
+
+validate(need(nrow(df) > 0, "No hay registros de insumos disponibles."))
+
+p <- ggplot(df, aes(fct_reorder(Insumos_entregados, volumen), volumen,
+                    text = glue("Insumo: {Insumos_entregados}<br>Volumen: {round(volumen, 2)}<br>Registros: {registros}"))) +
+  geom_col(fill = "#377EB8") +
+  coord_flip() +
+  labs(x = NULL, y = "Suma de N_insumos") +
+  gg_theme
+
+ggplotly(p, tooltip = "text")
+```
+
+### Cruce entre línea alimentaria e insumos
+
+```{r}
+
+df <- full_join(seguridad_alimentaria, entrega_insumos, by = "_id") |>
+  filter(!is.na(seguridad_alimentaria), !is.na(Insumos_entregados)) |>
+  group_by(seguridad_alimentaria, Insumos_entregados) |>
+  summarise(volumen = sum(N_insumos, na.rm = TRUE), .groups = "drop")
+
+validate(need(nrow(df) > 0, "No hay cruce válido entre seguridad alimentaria e insumos."))
+
+p <- ggplot(df, aes(Insumos_entregados, seguridad_alimentaria, fill = volumen,
+                    text = glue("Línea: {seguridad_alimentaria}<br>Insumo: {Insumos_entregados}<br>Volumen: {round(volumen, 2)}"))) +
+  geom_tile() +
+  labs(x = "Insumo entregado", y = "Línea de seguridad alimentaria", fill = "Volumen") +
+  gg_theme +
+  theme(axis.text.x = element_text(angle = 30, hjust = 1))
+
+ggplotly(p, tooltip = "text")
+```
+
+### Tabla base de seguridad alimentaria e insumos
+
+```{r}
+
+df <- full_join(seguridad_alimentaria, entrega_insumos, by = "_id")
+
+DT::datatable(df, rownames = FALSE, options = list(pageLength = 10, scrollX = TRUE))
+```
+
+## Indicadores adicionales propuestos
+
+```{r}
+indicadores <- tibble::tribble(
+  ~indicador, ~formula_sugerida, ~utilidad, ~modulo,
+  "Tasa de participación femenina", "Numero_mujeres / (Numero_hombres + Numero_mujeres)", "Evalúa balance de participación por comunidad y periodo.", "Asambleas y capacitaciones",
+  "Intensidad de asamblea", "(Numero_hombres + Numero_mujeres) * Numero_dias", "Aproxima esfuerzo social invertido en cada evento.", "Asambleas",
+  "Horas de capacitación por participante", "Numero_horas_capacitacion / (Numero_hombres + Numero_mujeres)", "Permite diferenciar eventos masivos de eventos intensivos.", "Capacitaciones",
+  "Diversidad de tipos de evidencia", "n_distinct(Tipo_evidencia)", "Mide amplitud del monitoreo de jaguar por comunidad o año.", "Jaguar",
+  "Tasa de conflicto reportado", "Registros con conflicto / total de evidencias", "Permite separar monitoreo de presencia de alertas socioecológicas.", "Jaguar",
+  "Cobertura temporal activa", "Meses con al menos un registro / meses del periodo filtrado", "Mide continuidad del monitoreo.", "Todos los módulos con fecha",
+  "Volumen medio de insumos por registro", "sum(N_insumos) / n()", "Resume intensidad de entrega por tipo de insumo.", "Insumos",
+  "Índice simple de gobernanza activa", "n_eventos_socializacion + n_asambleas", "Resume dinamismo organizativo territorial.", "Gobernanza + asambleas",
+  "Índice simple de esfuerzo biocultural", "n_asambleas + n_capacitaciones + n_socializaciones + n_evidencias_jaguar", "Integra actividad organizativa y monitoreo ecológico.", "General"
+)
+
+DT::datatable(indicadores, rownames = FALSE, options = list(pageLength = 12, scrollX = TRUE))
+```
+
+## Recomendaciones directas para la siguiente versión del repo
+
+1. Incorporar los notebooks fuente o exportarlos como `.qmd`/`.Rmd` dentro de `EDA/`.
+2. Añadir la tabla padre de mingas o monitoreo productivo para que `df_seguridad_alimentaria` y `df_entrega_insumos` respondan a filtros de fecha y comunidad.
+3. Mantener un identificador de evento único y, cuando existan tablas hijas, separar explícitamente métricas de evento y métricas de detalle para evitar doble conteo.
+4. Estandarizar catálogos de comunidad, conflicto y tipo de evidencia para reducir variación ortográfica.

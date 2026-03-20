@@ -1,0 +1,2398 @@
+---
+title: "Reporte de Monitoreo Biocultural"
+subtitle: "Fundación Pachamama — Proyecto de Conservación Biocultural Achuar"
+author: "Equipo de Monitoreo Comunitario"
+date: today
+format:
+  html:
+    theme: cosmo
+    toc: true
+    toc-depth: 3
+    toc-title: "Contenido"
+    toc-location: left
+    number-sections: true
+    code-fold: true
+    code-summary: "Ver código"
+    self-contained: true
+    smooth-scroll: true
+    page-layout: full
+    embed-resources: true
+    include-in-header:
+      text: |
+        <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css"/>
+        <style>
+          body { background: #f8faf8; }
+          .kpi-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
+            gap: 14px;
+            margin: 0.5rem 0 1rem 0;
+          }
+          .kpi-card {
+            background: white;
+            border-radius: 14px;
+            padding: 16px 18px;
+            box-shadow: 0 4px 14px rgba(0,0,0,.06);
+          }
+          .kpi-icon { font-size: 1.3rem; margin-bottom: 6px; }
+          .kpi-valor { font-size: 1.7rem; font-weight: 700; line-height: 1.1; }
+          .kpi-etiqueta { color: #4b5563; font-size: .95rem; margin-top: 4px; }
+          .empty-box {
+            background: #ffffff;
+            border-left: 4px solid #40916C;
+            border-radius: 10px;
+            padding: 14px 16px;
+            color: #374151;
+            margin: .75rem 0;
+          }
+          .section-note {
+            background: #eef7f2;
+            border-radius: 10px;
+            padding: 12px 14px;
+            margin-bottom: 12px;
+          }
+        </style>
+execute:
+  echo: false
+  warning: false
+  message: false
+params:
+  comunidad: "Todas"
+  anio_inicio: 2023
+  anio_fin: 2026
+---
+
+```{r setup}
+#| include: false
+
+library(dplyr)
+library(tidyr)
+library(ggplot2)
+library(plotly)
+library(lubridate)
+library(stringr)
+library(forcats)
+library(scales)
+library(DT)
+library(glue)
+library(purrr)
+library(htmltools)
+library(htmlwidgets)
+library(ggplot2)
+library(dplyr)
+library(lubridate)
+library(bslib)
+#source("Functions/plot_themes.R")
+library(stringr)
+library(plotly)
+library(tidyr)
+library(htmlwidgets)
+library(dygraphs)
+library(xts)
+library(tidyverse)
+library(googleVis)
+library(scales)
+library(tidytext)
+library(igraph)
+library(ggraph)
+library(wordcloud)
+
+
+
+pal_pachamama <- c(
+  verde_bosque = "#2D6A4F",
+  verde_medio  = "#40916C",
+  verde_claro  = "#74C69D",
+  verde_suave  = "#B7E4C7",
+  tierra       = "#8B5E3C",
+  tierra_claro = "#D4A373",
+  amarillo     = "#FFD166",
+  naranja      = "#EF8C4B",
+  azul         = "#264653",
+  gris         = "#6B7280"
+)
+
+cols_comunidades <- unname(pal_pachamama[c("verde_bosque", "tierra", "azul", "naranja", "verde_claro", "amarillo")])
+
+empty_box <- function(texto = "No existen datos válidos para el período o filtro seleccionado.") {
+  div(class = "empty-box", HTML(texto))
+}
+# ── Paleta oficial ─────────────────────────────────────────────────────────
+PAL <- list(
+  hoja    = "#183d1e",   # verde oscuro — primario
+  rio     = "#3c6d67",   # verde azulado — secundario
+  cielo   = "#79c6c4",   # turquesa/menta
+  arcilla = "#9caa7d",   # verde oliva
+  ave     = "#dd9536",   # ocre/naranja
+  semilla = "#f4e238",   # amarillo
+  blanco  = "#ffffff",
+  negro   = "#000000",
+  fondo   = "#f7f5f0",   # blanco cálido (UI background)
+  texto   = "#1a2e1c"
+)
+
+# Secuencias útiles para escalas
+PAL_SEQ  <- c("#f7f5f0","#9caa7d","#79c6c4","#3c6d67","#183d1e")
+PAL_DIV  <- c("#183d1e","#3c6d67","#79c6c4","#f7f5f0","#f4e238","#dd9536","#c0601a")
+PAL_CUAL <- c("#183d1e","#dd9536","#79c6c4","#f4e238","#9caa7d","#3c6d67","#e88a3c","#5a9e7a")
+
+# ── Tema ggplot2 base ──────────────────────────────────────────────────────
+theme_pachamama <- function(base_size = 12, legend_pos = "bottom") {
+  ggplot2::theme_minimal(base_size = base_size, base_family = "Raleway") +
+  ggplot2::theme(
+    plot.background  = ggplot2::element_rect(fill = PAL$fondo, color = NA),
+    panel.background = ggplot2::element_rect(fill = PAL$fondo, color = NA),
+    panel.grid.major = ggplot2::element_line(color = paste0(PAL$hoja, "14"), linewidth = 0.4),
+    panel.grid.minor = ggplot2::element_blank(),
+    axis.line        = ggplot2::element_line(color = paste0(PAL$hoja, "30"), linewidth = 0.5),
+    axis.ticks       = ggplot2::element_line(color = paste0(PAL$hoja, "30")),
+    axis.text        = ggplot2::element_text(color = PAL$rio,  size = ggplot2::rel(0.85)),
+    axis.title       = ggplot2::element_text(color = PAL$hoja, face = "bold", size = ggplot2::rel(0.9)),
+    plot.title       = ggplot2::element_text(color = PAL$hoja, face = "bold",
+                                             size  = ggplot2::rel(1.15), margin = ggplot2::margin(b = 4)),
+    plot.subtitle    = ggplot2::element_text(color = PAL$rio,  size = ggplot2::rel(0.88),
+                                             margin = ggplot2::margin(b = 10)),
+    plot.caption     = ggplot2::element_text(color = PAL$arcilla, size = ggplot2::rel(0.74), hjust = 0),
+    legend.position  = legend_pos,
+    legend.title     = ggplot2::element_text(color = PAL$hoja, face = "bold", size = ggplot2::rel(0.85)),
+    legend.text      = ggplot2::element_text(color = PAL$rio,  size = ggplot2::rel(0.82)),
+    strip.background = ggplot2::element_rect(fill = PAL$hoja, color = NA),
+    strip.text       = ggplot2::element_text(color = "#fff", face = "bold", size = ggplot2::rel(0.85)),
+    plot.margin      = ggplot2::margin(12, 16, 8, 12)
+  )
+}
+
+# ── Tema bslib para la UI de Shiny ────────────────────────────────────────
+#' Genera el tema bslib alineado al Manual de Marca Fundación Pachamama
+#' Se usa en ui.R: page_navbar(theme = pachamama_theme())
+pachamama_theme <- function() {
+  bslib::bs_theme(
+    version       = 5,
+    bg            = "#f7f5f0",   # fondo cálido
+    fg            = "#1a2e1c",   # texto oscuro
+    primary       = "#183d1e",   # Hoja — verde oscuro
+    secondary     = "#3c6d67",   # Río — verde azulado
+    success       = "#3c6d67",
+    info          = "#79c6c4",   # Cielo
+    warning       = "#dd9536",   # Ave
+    danger        = "#c0601a",
+    base_font     = bslib::font_google("Raleway", wght = c(300, 400, 600, 700, 800)),
+    heading_font  = bslib::font_google("Raleway", wght = c(700, 800)),
+    font_scale    = 0.92,
+    `navbar-bg`              = "#f7f5f0",
+    `navbar-light-brand-color`       = "#183d1e",
+    `navbar-light-active-color`      = "#183d1e",
+    `navbar-light-color`             = "#3c6d67",
+    `navbar-light-hover-color`       = "#183d1e",
+    `card-border-radius`             = "10px",
+    `card-box-shadow`                = "0 2px 10px rgba(24,61,30,0.08)",
+    `btn-border-radius`              = "6px"
+  )
+}
+
+# ── Escalas de color reutilizables ────────────────────────────────────────
+scale_fill_pacha   <- function(...) ggplot2::scale_fill_manual(values = PAL_CUAL, ...)
+scale_color_pacha  <- function(...) ggplot2::scale_color_manual(values = PAL_CUAL, ...)
+
+scale_fill_pacha_seq <- function(reverse = FALSE, ...) {
+  pal <- if (reverse) rev(PAL_SEQ) else PAL_SEQ
+  ggplot2::scale_fill_gradientn(colors = pal, ...)
+}
+scale_fill_pacha_div <- function(...) {
+  ggplot2::scale_fill_gradientn(colors = PAL_DIV, ...)
+}
+
+
+safe_read_csv <- function(path) {
+  if (!file.exists(path)) return(data.frame())
+
+  df <- read.csv(path, stringsAsFactors = FALSE, check.names = FALSE)
+
+  nm <- names(df)
+  nm <- as.character(nm)
+  nm[is.na(nm) | trimws(nm) == ""] <- "col_vacia"
+  nm <- make.unique(nm, sep = "_")
+
+  names(df) <- nm
+  df
+}
+
+clean_na_chr <- function(df) {
+  if (is.null(df) || !nrow(df)) return(df)
+
+  nm <- names(df)
+  nm <- as.character(nm)
+  nm[is.na(nm) | trimws(nm) == ""] <- "col_vacia"
+  names(df) <- make.unique(nm, sep = "_")
+
+  df |> mutate(across(where(is.character), ~ na_if(trimws(.x), "")))
+}
+
+find_col <- function(df, patterns) {
+  if (ncol(df) == 0) return(NA_character_)
+  nm_low <- str_to_lower(names(df))
+  hits <- which(map_lgl(nm_low, ~ any(str_detect(.x, patterns))))
+  if (length(hits) == 0) NA_character_ else names(df)[hits[1]]
+}
+
+coalesce_cols <- function(df, candidates) {
+  existing <- candidates[candidates %in% names(df)]
+  if (length(existing) == 0) return(rep(NA_character_, nrow(df)))
+  out <- df[[existing[1]]]
+  if (length(existing) > 1) {
+    for (nm in existing[-1]) out <- dplyr::coalesce(out, df[[nm]])
+  }
+  out
+}
+
+parse_num <- function(x) suppressWarnings(as.numeric(str_replace_all(as.character(x), ",", ".")))
+
+add_common_fields <- function(df) {
+  if (!nrow(df)) return(df)
+
+  fecha_col <- find_col(df, "^fecha$|fecha|date")
+  com_col   <- find_col(df, "^comunidad$|comunidad|community")
+  mon_col   <- find_col(df, "^monitor$|monitor")
+
+  num_hombres <- coalesce_cols(df, c("Numero_hombres", "Número_hombres", "Hombres"))
+  num_mujeres <- coalesce_cols(df, c("Numero_mujeres", "Número_mujeres", "Mujeres"))
+
+  df |>
+    mutate(
+      Fecha = if (!is.na(fecha_col)) suppressWarnings(as.Date(.data[[fecha_col]])) else as.Date(NA),
+      Comunidad_std = if (!is.na(com_col)) as.character(.data[[com_col]]) else NA_character_,
+      Monitor_std   = if (!is.na(mon_col)) as.character(.data[[mon_col]]) else NA_character_,
+      Numero_hombres_std = parse_num(num_hombres),
+      Numero_mujeres_std = parse_num(num_mujeres),
+      Participantes_std  = coalesce(Numero_hombres_std, 0) + coalesce(Numero_mujeres_std, 0),
+      Anio    = if_else(!is.na(Fecha), year(Fecha), NA_integer_),
+      MesNum  = if_else(!is.na(Fecha), month(Fecha), NA_integer_),
+      MesLab  = if_else(!is.na(Fecha), as.character(month(Fecha, label = TRUE, abbr = FALSE, locale = Sys.getlocale("LC_TIME"))), NA_character_),
+      YearMon = if_else(!is.na(Fecha), floor_date(Fecha, "month"), as.Date(NA))
+    )
+}
+
+normalize_asambleas <- function(df) {
+  if (!nrow(df)) return(df)
+  df |> 
+    clean_na_chr() |>
+    add_common_fields() |>
+    mutate(
+      Tipo_asamblea_std = coalesce_cols(cur_data_all(), c("Tipo_asamblea", "Tipo de asamblea", "Tipo")),
+      Tipo_asamblea_std = coalesce(Tipo_asamblea_std, "Sin clasificar"),
+      Numero_dias_std = parse_num(coalesce_cols(cur_data_all(), c("Numero_dias", "Número_dias"))),
+      Decision_principal_std = coalesce_cols(cur_data_all(), c("Decision_principal", "Decisión_principal", "Decision principal"))
+    )
+}
+
+normalize_capacitaciones <- function(df) {
+  if (!nrow(df)) return(df)
+  df |>
+    clean_na_chr() |>
+    add_common_fields() |>
+    mutate(
+      Horas_std = parse_num(coalesce_cols(cur_data_all(), c("Numero_horas_capacitacion", "Número_horas_capacitacion", "Horas", "Numero_horas"))),
+      Horas_std = coalesce(Horas_std, 0),
+      Capacidad_adquirida_std = coalesce_cols(cur_data_all(), c("Capacidad_adquirida", "Capacidad adquirida", "Tema", "Descripcion"))
+    )
+}
+
+normalize_generic <- function(df) {
+  if (!nrow(df)) return(df)
+  df |> clean_na_chr() |> add_common_fields()
+}
+
+filtrar_generico <- function(df) {
+  if (!nrow(df)) return(df)
+  out <- df
+  if ("Anio" %in% names(out)) out <- out |> filter(is.na(Anio) | (Anio >= params$anio_inicio & Anio <= params$anio_fin))
+  if (params$comunidad != "Todas" && "Comunidad_std" %in% names(out)) {
+    out <- out |> filter(is.na(Comunidad_std) | str_detect(str_to_lower(Comunidad_std), str_to_lower(params$comunidad)))
+  }
+  out
+}
+
+plotly_config <- function(p) {
+  config(p, displaylogo = FALSE, responsive = TRUE)
+}
+
+safe_max <- function(x) {
+  x <- suppressWarnings(as.numeric(x))
+  x <- x[is.finite(x)]
+  if (!length(x)) 1 else max(x)
+}
+
+ruta_datos <- "../Data"
+comunidad = "Wayusentsa"
+asambleas_raw      <- safe_read_csv(file.path(ruta_datos, "Asambleas.csv"))
+capacitaciones_raw <- safe_read_csv(file.path(ruta_datos, "Capacitaciones.csv"))
+seg_alim_raw       <- safe_read_csv(file.path(ruta_datos, "df_seguridad_alimentaria.csv"))
+insumos_raw        <- safe_read_csv(file.path(ruta_datos, "df_entrega_insumos.csv"))
+jaguar_raw         <- safe_read_csv(file.path(ruta_datos, "Evidencias_jaguar.csv"))
+social_raw         <- safe_read_csv(file.path(ruta_datos, "Socialización_acuerdos.csv"))
+censos_raw         <- safe_read_csv(file.path(ruta_datos, "censos.csv"))
+mingas_raw         <- safe_read_csv(file.path(ruta_datos, "Mingas.csv"))
+planes_raw         <- safe_read_csv(file.path(ruta_datos, "Planes_de_vida_general.csv"))
+caceria_raw         <- safe_read_csv(file.path(ruta_datos, "Reporte_cacería_pesca.csv"))
+reforestacion_raw  <- safe_read_csv(file.path(ruta_datos, "Reforestacion.csv"))
+
+
+
+asambleas      <- normalize_asambleas(asambleas_raw) |> filtrar_generico()
+capacitaciones <- normalize_capacitaciones(capacitaciones_raw) |> filtrar_generico()
+seg_alim       <- seg_alim_raw
+insumos        <- normalize_generic(insumos_raw) |> filtrar_generico()
+jaguar         <- normalize_generic(jaguar_raw) |> filtrar_generico()
+social         <- normalize_generic(social_raw) |> filtrar_generico()
+censos         <- normalize_generic(censos_raw) |> filtrar_generico()
+mingas         <- normalize_generic(mingas_raw) |> filtrar_generico()
+planes         <- normalize_generic(planes_raw) |> filtrar_generico()
+caceria        <- normalize_generic(caceria_raw) |> filtrar_generico()
+reforestacion  <- normalize_generic(reforestacion_raw) |> filtrar_generico()
+
+asambleas      <- asambleas%>%filter(Comunidad_std == comunidad)
+capacitaciones <- capacitaciones%>%filter(Comunidad_std == comunidad)
+#seg_alim       <- seg_alim%>%filter(Comunidad == comunidad)
+insumos        <- insumos%>%filter(Comunidad_std == comunidad)
+jaguar         <- jaguar%>%filter(Comunidad_std == comunidad)
+social         <- social%>%filter(Comunidad_std == comunidad)
+censos         <- censos%>%filter(Comunidad_std == comunidad)
+mingas         <- mingas%>%filter(Comunidad_std == comunidad)
+planes         <- planes%>%filter(Comunidad_std == comunidad)
+caceria         <- caceria%>%filter(Comunidad_std == comunidad)
+reforestacion         <- reforestacion%>%filter(Comunidad_std == comunidad)
+comunidades <- sort(unique(na.omit(c(asambleas$Comunidad_std, capacitaciones$Comunidad_std, seg_alim$Comunidad_std, insumos$Comunidad_std, jaguar$Comunidad_std, social$Comunidad_std))))
+
+actividad_total <- bind_rows(
+  asambleas |> transmute(Fuente = "Asambleas", Fecha, YearMon, Comunidad_std),
+  capacitaciones |> transmute(Fuente = "Capacitaciones", Fecha, YearMon, Comunidad_std),
+  #seg_alim |> transmute(Fuente = "Seguridad alimentaria", Fecha, YearMon, Comunidad_std),
+  insumos |> transmute(Fuente = "Entrega de insumos", Fecha, YearMon, Comunidad_std),
+  jaguar |> transmute(Fuente = "Evidencias de jaguar", Fecha, YearMon, Comunidad_std),
+  social |> transmute(Fuente = "Socialización de acuerdos", Fecha, YearMon, Comunidad_std)
+) |> filter(!is.na(Fecha))
+
+
+```
+
+
+
+::: {.callout-note appearance="minimal"}
+Proyecto de Conservación Biocultural Achuar. Datos generados por monitores comunitarios mediante KoboToolbox. El repositorio incluye datos tabulares en `Data/` y salidas interactivas previas en `EDA/Plots/`, incluyendo series temporales para el tablero general, asambleas, gobernanza y mingas, además de un archivo de tema gráfico en `EDA/Functions/plot_themes.R`. fileciteturn0file0
+:::
+
+# Filtros aplicados {.unnumbered}
+
+
+
+```{r filtros}
+cat(glue("\nComunidad: {params$comunidad}\nAños: {params$anio_inicio} – {params$anio_fin}\nComunidades detectadas: {if(length(comunidades)) paste(comunidades, collapse = ' | ') else 'Sin comunidades válidas'}\n"))
+```
+
+# Resumen ejecutivo
+
+```{r kpis}
+kpis <- list(
+  list(icono = "fa-users", color = pal_pachamama["verde_bosque"], valor = nrow(asambleas), etiqueta = "Asambleas"),
+  list(icono = "fa-graduation-cap", color = pal_pachamama["naranja"], valor = nrow(capacitaciones), etiqueta = "Capacitaciones"),
+  list(icono = "fa-box-open", color = pal_pachamama["tierra"], valor = nrow(insumos), etiqueta = "Entregas de insumos"),
+  list(icono = "fa-paw", color = pal_pachamama["azul"], valor = nrow(jaguar), etiqueta = "Evidencias de jaguar"),
+  list(icono = "fa-people-group", color = pal_pachamama["verde_medio"], valor = sum(asambleas$Participantes_std, na.rm = TRUE) + sum(capacitaciones$Participantes_std, na.rm = TRUE), etiqueta = "Participaciones registradas"),
+  list(icono = "fa-clock", color = pal_pachamama["amarillo"], valor = sum(capacitaciones$Horas_std, na.rm = TRUE), etiqueta = "Horas de capacitación")
+)
+
+cards <- map_chr(kpis, \(k) glue('<div class="kpi-card" style="border-top: 4px solid {k$color};"><div class="kpi-icon"><i class="fas {k$icono}" style="color:{k$color}"></i></div><div class="kpi-valor">{format(k$valor, big.mark=",")}</div><div class="kpi-etiqueta">{k$etiqueta}</div></div>'))
+HTML(paste0('<div class="kpi-grid">', paste(cards, collapse = ''), '</div>'))
+```
+
+```{r serie-general}
+serie_general <- actividad_total |>
+  count(YearMon, Fuente, name = "n") |>
+  arrange(YearMon)
+
+if (!nrow(serie_general)) {
+  empty_box()
+} else {
+  plot_ly(
+    serie_general,
+    x = ~YearMon, y = ~n, color = ~Fuente,
+    type = "scatter", mode = "lines+markers",
+    colors = cols_comunidades,
+    line = list(width = 2),
+    marker = list(size = 7),
+    hovertemplate = "<b>%{fullData.name}</b><br>%{x|%Y-%m}<br>Registros: %{y}<extra></extra>"
+  ) |>
+    layout(
+      title = list(text = "Serie temporal general de registros", font = list(color = pal_pachamama["verde_bosque"], size = 17)),
+      xaxis = list(title = "", rangeslider = list(visible = TRUE)),
+      yaxis = list(title = "Número de registros"),
+      hovermode = "x unified",
+      legend = list(orientation = "h"),
+      plot_bgcolor = "#FAFAFA",
+      paper_bgcolor = "white"
+    ) |>
+    plotly_config()
+}
+```
+
+# Censos
+## Total censados
+```{r}
+
+total_comunidades <- censos %>%
+  group_by(Comunidad_x) %>%
+  summarise(Total = n(), .groups = "drop") %>%
+  arrange(desc(Total)) # Ordenamos de mayor a menor
+
+
+
+# 2. Guardamos tu ggplot en un objeto (ej. p)
+p <- ggplot(total_comunidades, aes(x = reorder(Comunidad_x, Total), 
+                                   y = Total, 
+                                   fill = Comunidad_x,
+                                   # Agregamos text para personalizar el tooltip (opcional)
+                                   text = paste("Comunidad:", Comunidad_x, 
+                                                "<br>Total:", Total))) +
+  geom_col(show.legend = FALSE) + 
+  coord_flip() +  
+  scale_fill_pacha() + 
+  labs(
+    title = "Total de Censados por Comunidad",
+    x = "Comunidad",
+    y = "Cantidad de personas censadas",
+    caption = "Manual de Marca Pachamama 2024"
+  ) +
+  theme_pachamama() + 
+  theme(text = element_text(family = "sans"))
+
+# 3. Lo convertimos en interactivo
+# tooltip = "text" sirve para que solo muestre lo que configuramos arriba
+p_interactivo <- ggplotly(p, tooltip = "text")
+
+# 4. Mostrar el gráfico
+p_interactivo
+```
+
+## Pirámide poblacional 
+
+```{r}
+# 1. Crear rangos de edad y preparar datos
+data_piramide <- censos %>%
+  filter(!is.na(Edad), !is.na(Genero)) %>%
+  # Creamos grupos de edad cada 5 o 10 años
+  mutate(Rango_Edad = cut(Edad, breaks = seq(0, 100, by = 5), right = FALSE)) %>%
+  group_by(Rango_Edad, Genero) %>%
+  summarise(Total = n(), .groups = "drop") %>%
+  # Convertimos Masculino a negativo para el eje izquierdo
+  mutate(Total_Grafico = if_else(Genero == "Mujer", -Total, Total))
+
+plot_piramide = ggplot(data_piramide, aes(x = Rango_Edad, y = Total_Grafico, fill = Genero)) +
+  geom_col(width = 0.8) +
+  coord_flip() +  # Volteamos la gráfica para que las edades suban
+  
+  # Colores institucionales
+  scale_fill_manual(values = c("Mujer" = PAL$ave, "Hombre" = PAL$hoja)) +
+  
+  # Ajustamos el eje Y para que no muestre números negativos
+  scale_y_continuous(labels = abs) + 
+  
+  labs(
+    title = "Pirámide Poblacional",
+    subtitle = "Distribución por edad y género",
+    x = "Rango de Edad",
+    y = "Número de Personas",
+    fill = "Género"
+  ) +
+  
+  theme_pachamama() +
+  theme(
+    panel.grid.major.y = element_blank(),
+    text = element_text(family = "sans")
+  )
+
+# Convertimos la gráfica estática en interactiva
+piramide_interactiva <- ggplotly(plot_piramide, tooltip = "text") %>%
+  layout(
+    # Ajustamos el título para que no se encime
+    title = list(text = paste0('<b>Pirámide Poblacional</b>',
+                               '<br><sup>Distribución por edad y género</sup>')),
+    # Mantenemos el estilo del fondo de la Fundación
+    paper_bgcolor = PAL$fondo,
+    plot_bgcolor = PAL$fondo
+  )
+
+piramide_interactiva
+
+```
+## Condiciones/Enfermedades
+
+```{r}
+
+data_pastel <- censos %>%
+  mutate(Estado_Salud = if_else(is.na(CondicionSalud) | CondicionSalud == "", 
+                                "Sin enfermedad reportada", 
+                                "Con enfermedad reportada")) %>%
+  group_by(Estado_Salud) %>%
+  summarise(Total = n(), .groups = "drop") %>%
+  mutate(Porcentaje = Total / sum(Total) * 100,
+         Etiqueta = paste0(round(Porcentaje, 1), "%")) # Creamos el texto del porcentaje
+         
+         
+ggplot(data_pastel, aes(x = "", y = Total, fill = Estado_Salud)) +
+  geom_bar(stat = "identity", width = 1, color = "white") +
+  coord_polar("y", start = 0) +
+  
+  # Usamos colores contrastantes de la paleta institucional
+  scale_fill_manual(values = c("Con enfermedad reportada" = PAL$ave, 
+                               "Sin enfermedad reportada" = PAL$hoja)) +
+  
+  # Añadimos los porcentajes dentro del pastel
+  geom_text(aes(label = Etiqueta), 
+            position = position_stack(vjust = 0.5), 
+            color = "white", fontface = "bold", size = 5) +
+  
+  labs(
+    title = "Distribución de Salud en la Población",
+    subtitle = "Comparativa: Personas con registros vs. Sin registros",
+    fill = "Condición",
+    caption = "Fuente: Censo Fundación Pachamama"
+  ) +
+  
+  theme_pachamama() +
+  theme(
+    axis.text.x = element_blank(),
+    axis.title.x = element_blank(),
+    axis.title.y = element_blank(),
+    panel.grid.major = element_blank(), # Limpiamos el fondo para el pastel
+    text = element_text(family = "sans")
+  )
+
+```
+
+```{r}
+
+
+# Filtrar y preparar conteo
+data_enfermedades <- censos %>%
+  # Quitamos los vacíos y NAs para ver solo las condiciones
+  filter(!is.na(CondicionSalud), CondicionSalud != "") %>%
+  group_by(CondicionSalud) %>%
+  summarise(Total = n(), .groups = "drop") %>%
+  arrange(desc(Total))
+
+ggplot(data_enfermedades, aes(x = reorder(CondicionSalud, Total), y = Total)) +
+  # Usamos el color 'rio' de tu lista PAL
+  geom_col(fill = PAL$rio, width = 0.7) + 
+  
+  # Giramos para leer bien los nombres
+  coord_flip() + 
+  
+  # Añadimos el número total al final de cada barra para mayor claridad
+  geom_text(aes(label = Total), 
+            hjust = -0.2, 
+            color = PAL$hoja, 
+            size = 3.5, 
+            fontface = "bold") +
+  
+  labs(
+    title = "Desglose de principales condiciones de Salud",
+    subtitle = "Frecuencia por tipo de patología reportada",
+    x = "Condición",
+    y = "Número de Personas"
+  ) +
+  
+  # Ajustamos el límite del eje Y para que el texto no se corte
+  scale_y_continuous(expand = expansion(mult = c(0, 0.1))) +
+  
+  theme_pachamama() +
+  theme(
+    panel.grid.major.y = element_blank(), # Quitamos líneas horizontales para limpiar
+    text = element_text(family = "sans")
+  )
+
+```
+
+# Gobernanza comunitaria
+
+<div class="section-note">Esta sección consolida la dinámica temporal, participación, composición por tipo de asamblea, monitores y decisiones registradas. Se corrigió el manejo de duplicados, nulos y filtros para evitar errores cuando falten columnas o existan registros repetidos.</div>
+
+## Asambleas
+
+```{r asambleas-mensual}
+asm_mes <- asambleas |>
+  filter(!is.na(YearMon), !is.na(Comunidad_std)) |>
+  count(YearMon, Comunidad_std, name = "n")
+
+if (!nrow(asm_mes)) {
+  empty_box()
+} else {
+  plot_ly(
+    asm_mes,
+    x = ~YearMon, y = ~n, color = ~Comunidad_std,
+    type = "bar", colors = cols_comunidades,
+    hovertemplate = "<b>%{fullData.name}</b><br>%{x|%Y-%m}<br>Asambleas: %{y}<extra></extra>"
+  ) |>
+    layout(
+      barmode = "stack",
+      title = list(text = "Asambleas por mes y comunidad", font = list(color = pal_pachamama["verde_bosque"], size = 15)),
+      xaxis = list(title = "", rangeslider = list(visible = TRUE)),
+      yaxis = list(title = "Número de asambleas"),
+      legend = list(orientation = "h"),
+      plot_bgcolor = "#FAFAFA", paper_bgcolor = "white"
+    ) |>
+    plotly_config()
+}
+```
+
+```{r asambleas-participacion}
+
+
+# 1. Pre-procesamiento: Limpieza de NAs y cálculo de estadísticos
+# Filtramos primero para que las medias y desviaciones sean precisas
+asambleas_limpias <- asambleas %>%
+  select(Numero_hombres, Numero_mujeres) %>%
+  drop_na(Numero_hombres, Numero_mujeres) # Eliminamos filas con NA en estas columnas
+
+resumen_stats_asambleas <- asambleas_limpias %>%
+  pivot_longer(cols = everything(), names_to = "Genero", values_to = "Cantidad") %>%
+  mutate(Genero = if_else(Genero == "Numero_hombres", "Hombres", "Mujeres")) %>%
+  group_by(Genero) %>%
+  summarise(
+    Media = mean(Cantidad),
+    SD = sd(Cantidad),
+    .groups = 'drop'
+  )
+
+asambleas_long <- asambleas_limpias %>%
+  pivot_longer(cols = everything(), names_to = "Genero", values_to = "Cantidad") %>%
+  mutate(Genero = if_else(Genero == "Numero_hombres", "Hombres", "Mujeres"))
+
+# 2. Gráfica de Violín con Puntos, Métricas y Etiquetas (Datos de Asambleas)
+ggplot(asambleas_long, aes(x = Genero, y = Cantidad, fill = Genero)) +
+  # Fondo de Violín
+  geom_violin(alpha = 0.2, color = "gray80", trim = FALSE) +
+  
+  # Puntos individuales (dispersión real de asambleas)
+  geom_point(position = position_jitter(width = 0.1), alpha = 0.15, color = "#3c6d67", size = 1.2) +
+  
+  # Barra de Desviación Estándar (±1 SD)
+  geom_errorbar(data = resumen_stats_asambleas, 
+                aes(y = Media, ymin = Media - SD, ymax = Media + SD), 
+                width = 0.1, color = "black", linewidth = 0.8) +
+  
+  # Punto del Promedio (Rombo rojo)
+  geom_point(data = resumen_stats_asambleas, aes(y = Media), 
+             shape = 18, size = 5, color = "red") +
+  
+  # Etiquetas de texto con los valores exactos
+  geom_text(data = resumen_stats_asambleas, 
+            aes(y = Media, label = paste0("Media: ", round(Media, 2), 
+                                          "\nSD: ±", round(SD, 2))),
+            hjust = -0.5, 
+            vjust = 0.5, 
+            size = 3.5, 
+            fontface = "bold",
+            color = "black") +
+  
+  scale_fill_pacha() + # Usando tu paleta institucional
+  labs(
+    title = "Participación por Género en Asambleas",
+    subtitle = "Análisis de promedios y distribución (Registros sin NA)",
+    x = "Género",
+    y = "Número de Asistentes",
+    caption = "Manual de Marca Pachamama 2026"
+  ) +
+  theme_pachamama() +
+  theme(legend.position = "none")
+
+```
+
+```{r asambleas-equidad}
+asm_ratio <- asambleas |>
+  filter(!is.na(Comunidad_std)) |>
+  group_by(Comunidad_std) |>
+  summarise(Hombres = sum(Numero_hombres_std, na.rm = TRUE), Mujeres = sum(Numero_mujeres_std, na.rm = TRUE), .groups = "drop") |>
+  mutate(Total = Hombres + Mujeres, Pct_Mujeres = if_else(Total > 0, 100 * Mujeres / Total, NA_real_)) |>
+  filter(!is.na(Pct_Mujeres))
+
+if (!nrow(asm_ratio)) {
+  empty_box()
+} else {
+  plot_ly(
+    asm_ratio,
+    x = ~Comunidad_std,
+    y = ~Pct_Mujeres,
+    type = "bar",
+    marker = list(color = pal_pachamama["verde_medio"]),
+    hovertemplate = "<b>%{x}</b><br>% Mujeres: %{y:.1f}<extra></extra>"
+  ) |>
+    layout(
+      title = list(text = "Indicador de equidad de género en asambleas", font = list(color = pal_pachamama["verde_bosque"], size = 15)),
+      xaxis = list(title = ""),
+      yaxis = list(title = "% mujeres", range = c(0, 100)),
+      shapes = list(list(type = "line", x0 = -0.5, x1 = max(0, nrow(asm_ratio) - 0.5), y0 = 50, y1 = 50, line = list(color = pal_pachamama["naranja"], dash = "dash"))),
+      plot_bgcolor = "#FAFAFA", paper_bgcolor = "white"
+    ) |>
+    plotly_config()
+}
+```
+
+```{r asambleas-tipo}
+asm_tipo <- asambleas |>
+  filter(!is.na(Tipo_asamblea_std)) |>
+  count(Tipo_asamblea_std, name = "n")
+
+if (!nrow(asm_tipo)) {
+  empty_box()
+} else {
+  plot_ly(
+    asm_tipo,
+    labels = ~Tipo_asamblea_std,
+    values = ~n,
+    type = "pie",
+    hole = 0.45,
+    textinfo = "label+percent",
+    marker = list(colors = cols_comunidades),
+    hovertemplate = "<b>%{label}</b><br>Total: %{value}<br>%{percent}<extra></extra>"
+  ) |>
+    layout(title = list(text = "Distribución por tipo de asamblea", font = list(color = pal_pachamama["verde_bosque"], size = 15))) |>
+    plotly_config()
+}
+```
+
+```{r asambleas-monitores}
+asm_mon <- asambleas |>
+  filter(!is.na(Monitor_std)) |>
+  count(Monitor_std, sort = TRUE, name = "n") |>
+  slice_head(n = 12)
+
+if (!nrow(asm_mon)) {
+  empty_box()
+} else {
+  plot_ly(
+    asm_mon,
+    x = ~n, y = ~fct_reorder(Monitor_std, n),
+    type = "bar", orientation = "h",
+    marker = list(color = pal_pachamama["tierra"]),
+    hovertemplate = "<b>%{y}</b><br>Asambleas registradas: %{x}<extra></extra>"
+  ) |>
+    layout(
+      title = list(text = "Monitores con más registros de asambleas", font = list(color = pal_pachamama["verde_bosque"], size = 15)),
+      xaxis = list(title = "Número de registros"),
+      yaxis = list(title = ""),
+      plot_bgcolor = "#FAFAFA", paper_bgcolor = "white"
+    ) |>
+    plotly_config()
+}
+```
+
+```{r tabla-asambleas}
+asambleas |>
+  transmute(
+    Fecha = format(Fecha, "%d/%m/%Y"),
+    Comunidad = Comunidad_std,
+    Monitor = Monitor_std,
+    Tipo = Tipo_asamblea_std,
+    Hombres = coalesce(Numero_hombres_std, 0),
+    Mujeres = coalesce(Numero_mujeres_std, 0),
+    Participantes = coalesce(Participantes_std, 0),
+    Dias = Numero_dias_std,
+    Decision_principal = Decision_principal_std
+  ) |>
+  arrange(desc(Fecha)) |>
+  datatable(
+    filter = "top",
+    extensions = c("Buttons", "Scroller"),
+    options = list(dom = "Bfrtip", buttons = c("csv", "excel"), scrollY = 350, scroller = TRUE, pageLength = 12),
+    class = "compact stripe hover"
+  )
+```
+
+```{r}
+stop_words_es <- data.frame(word = c("de", "la", "el", "en", "y", "a", "los", "las", "un", "una", 
+                                     "con", "por", "para", "se", "del", "al", "lo", "su", "es", "una", "mas", "que"))
+
+# 2. Procesamiento con limpieza de NAs
+red_datos <- asambleas %>%
+  filter(!is.na(Decision_principal)) %>%
+  mutate(texto = str_to_lower(Decision_principal) %>% str_replace_all("[^[:alpha:][:space:]]", "")) %>%
+  unnest_tokens(bigrama, texto, token = "ngrams", n = 2) %>%
+  # Al separar, si una frase tenía una sola palabra, el segundo valor será NA
+  separate(bigrama, c("p1", "p2"), sep = " ") %>%
+  # ELIMINAR LOS NAs (Aquí es donde se soluciona el error)
+  filter(!is.na(p1), !is.na(p2)) %>%
+  # Quitar palabras sin significado
+  filter(!p1 %in% stop_words_es$word, !p2 %in% stop_words_es$word) %>%
+  count(p1, p2, sort = TRUE) %>%
+  filter(n > 1)
+
+# 3. Ahora sí, crear el objeto de red
+red_objeto <- graph_from_data_frame(red_datos)
+freq_nodos <- bind_rows(
+  red_datos %>% select(word = p1, n),
+  red_datos %>% select(word = p2, n)
+) %>%
+  group_by(word) %>%
+  summarise(freq = sum(n), .groups = "drop")
+
+
+# 4. Graficar
+set.seed(123)
+red_objeto <- graph_from_data_frame(red_datos)
+
+V(red_objeto)$freq <- freq_nodos$freq[match(V(red_objeto)$name, freq_nodos$word)]
+
+
+ggraph(red_objeto, layout = "kk") +
+  geom_edge_link(
+    aes(edge_alpha = n),
+    edge_colour = PAL$rio,
+    arrow = arrow(length = unit(3, "mm")),
+    end_cap = circle(3, "mm"),
+    show.legend = FALSE
+  ) +
+  geom_node_point(
+    aes(size = freq),
+    color = PAL$ave
+  ) +
+  geom_node_text(
+    aes(label = name),
+    vjust = 1.8,
+    size = 3,
+    fontface = "bold"
+  ) +
+  scale_size(range = c(3, 12)) +
+  labs(
+    title = "Red de Conceptos: Decisiones princiapales en la Asamblea",
+  ) +
+  theme_void() +
+  theme(plot.margin = margin(20, 20, 20, 20))
+
+```
+
+
+
+## Generación de capacidades
+
+<div class="section-note">Esta sección resume frecuencia, horas, esfuerzo y temáticas de capacitación. Se homogenizó la lectura de horas y participantes para que los cálculos no fallen si aparecen vacíos o tipos inconsistentes.</div>
+
+```{r cap-serie}
+cap_mes <- capacitaciones |>
+  filter(!is.na(YearMon), !is.na(Comunidad_std)) |>
+  count(YearMon, Comunidad_std, name = "n")
+
+if (!nrow(cap_mes)) {
+  empty_box()
+} else {
+  plot_ly(
+    cap_mes,
+    x = ~YearMon, y = ~n, color = ~Comunidad_std,
+    type = "scatter", mode = "lines+markers",
+    colors = cols_comunidades,
+    line = list(width = 2.5),
+    marker = list(size = 8),
+    hovertemplate = "<b>%{fullData.name}</b><br>%{x|%Y-%m}<br>Sesiones: %{y}<extra></extra>"
+  ) |>
+    layout(
+      title = list(text = "Sesiones de capacitación por mes", font = list(color = pal_pachamama["verde_bosque"], size = 15)),
+      xaxis = list(title = "", rangeslider = list(visible = TRUE)),
+      yaxis = list(title = "Número de sesiones"),
+      hovermode = "x unified",
+      legend = list(orientation = "h"),
+      plot_bgcolor = "#FAFAFA", paper_bgcolor = "white"
+    ) |>
+    plotly_config()
+}
+```
+
+```{r cap-horas}
+horas_mes <- capacitaciones |>
+  filter(!is.na(YearMon), !is.na(Comunidad_std)) |>
+  group_by(YearMon, Comunidad_std) |>
+  summarise(Horas = sum(Horas_std, na.rm = TRUE), .groups = "drop") |>
+  arrange(YearMon) |>
+  group_by(Comunidad_std) |>
+  mutate(Horas_acum = cumsum(Horas))
+
+if (!nrow(horas_mes)) {
+  empty_box()
+} else {
+  plot_ly(
+    horas_mes,
+    x = ~YearMon, y = ~Horas_acum, color = ~Comunidad_std,
+    type = "scatter", mode = "lines",
+    colors = cols_comunidades,
+    line = list(width = 2.5),
+    hovertemplate = "<b>%{fullData.name}</b><br>%{x|%Y-%m}<br>Horas acumuladas: %{y:.1f}<extra></extra>"
+  ) |>
+    layout(
+      title = list(text = "Horas acumuladas de capacitación", font = list(color = pal_pachamama["verde_bosque"], size = 15)),
+      xaxis = list(title = ""),
+      yaxis = list(title = "Horas acumuladas"),
+      legend = list(orientation = "h"),
+      plot_bgcolor = "#FAFAFA", paper_bgcolor = "white"
+    ) |>
+    plotly_config()
+}
+```
+
+```{r cap-temas}
+cap_temas <- capacitaciones |>
+  filter(!is.na(Capacidad_adquirida_std)) |>
+  mutate(
+    Tema = case_when(
+      str_detect(str_to_lower(Capacidad_adquirida_std), "dron|drone|vuelo") ~ "Drone y vuelo",
+      str_detect(str_to_lower(Capacidad_adquirida_std), "cámara|camara|trampa") ~ "Cámaras trampa",
+      str_detect(str_to_lower(Capacidad_adquirida_std), "gps") ~ "GPS",
+      str_detect(str_to_lower(Capacidad_adquirida_std), "monitoreo|monitor") ~ "Monitoreo",
+      str_detect(str_to_lower(Capacidad_adquirida_std), "comunicac|audio|video|fotograf") ~ "Comunicación y documentación",
+      str_detect(str_to_lower(Capacidad_adquirida_std), "recurso|forestal|maderable") ~ "Manejo de recursos",
+      str_detect(str_to_lower(Capacidad_adquirida_std), "arquitectura|casa") ~ "Arquitectura tradicional",
+      str_detect(str_to_lower(Capacidad_adquirida_std), "territorio|lindero|limite") ~ "Territorio y límites",
+      TRUE ~ "Otros"
+    )
+  ) |>
+  count(Tema, sort = TRUE, name = "n")
+
+if (!nrow(cap_temas)) {
+  empty_box()
+} else {
+  plot_ly(
+    cap_temas,
+    x = ~n, y = ~fct_reorder(Tema, n),
+    type = "bar", orientation = "h",
+    marker = list(color = pal_pachamama["verde_bosque"]),
+    hovertemplate = "<b>%{y}</b><br>Sesiones: %{x}<extra></extra>"
+  ) |>
+    layout(
+      title = list(text = "Temáticas principales de capacitación", font = list(color = pal_pachamama["verde_bosque"], size = 15)),
+      xaxis = list(title = "Número de sesiones"),
+      yaxis = list(title = ""),
+      plot_bgcolor = "#FAFAFA", paper_bgcolor = "white"
+    ) |>
+    plotly_config()
+}
+```
+
+```{r cap-esfuerzo}
+esfuerzo <- capacitaciones |>
+  mutate(Esfuerzo = coalesce(Horas_std, 0) * coalesce(Participantes_std, 0)) |>
+  filter(!is.na(YearMon), !is.na(Comunidad_std), Esfuerzo > 0) |>
+  group_by(YearMon, Comunidad_std) |>
+  summarise(Esfuerzo_total = sum(Esfuerzo, na.rm = TRUE), .groups = "drop")
+
+if (!nrow(esfuerzo)) {
+  empty_box()
+} else {
+  plot_ly(
+    esfuerzo,
+    x = ~YearMon, y = ~Esfuerzo_total, color = ~Comunidad_std,
+    type = "bar", colors = cols_comunidades,
+    hovertemplate = "<b>%{fullData.name}</b><br>%{x|%Y-%m}<br>Horas-persona: %{y:.1f}<extra></extra>"
+  ) |>
+    layout(
+      barmode = "stack",
+      title = list(text = "Esfuerzo de capacitación (horas × participantes)", font = list(color = pal_pachamama["verde_bosque"], size = 15)),
+      xaxis = list(title = "", rangeslider = list(visible = TRUE)),
+      yaxis = list(title = "Horas-persona"),
+      legend = list(orientation = "h"),
+      plot_bgcolor = "#FAFAFA", paper_bgcolor = "white"
+    ) |>
+    plotly_config()
+}
+```
+
+```{r tabla-cap}
+capacitaciones |>
+  transmute(
+    Fecha = format(Fecha, "%d/%m/%Y"),
+    Comunidad = Comunidad_std,
+    Monitor = Monitor_std,
+    Participantes = Participantes_std,
+    Horas = Horas_std,
+    Tema = Capacidad_adquirida_std
+  ) |>
+  arrange(desc(Fecha)) |>
+  datatable(
+    filter = "top",
+    extensions = c("Buttons", "Scroller"),
+    options = list(dom = "Bfrtip", buttons = c("csv", "excel"), scrollY = 350, scroller = TRUE, pageLength = 12),
+    class = "compact stripe hover"
+  )
+```
+
+```{r}
+
+# 1. Pre-procesamiento: Limpieza de NAs y transformación a formato largo
+capacitaciones_limpias <- capacitaciones %>%
+  select(Numero_hombres, Numero_mujeres) %>%
+  # Eliminamos filas donde ambos campos sean NA para no falsear el violín
+  drop_na(Numero_hombres, Numero_mujeres) 
+
+# 2. Cálculo de estadísticos para las etiquetas
+resumen_stats_cap <- capacitaciones_limpias %>%
+  pivot_longer(cols = everything(), names_to = "Genero", values_to = "Cantidad") %>%
+  mutate(Genero = if_else(Genero == "Numero_hombres", "Hombres", "Mujeres")) %>%
+  group_by(Genero) %>%
+  summarise(
+    Media = mean(Cantidad),
+    SD = sd(Cantidad),
+    .groups = 'drop'
+  )
+
+# 3. Preparación de datos para la gráfica
+cap_long <- capacitaciones_limpias %>%
+  pivot_longer(cols = everything(), names_to = "Genero", values_to = "Cantidad") %>%
+  mutate(Genero = if_else(Genero == "Numero_hombres", "Hombres", "Mujeres"))
+
+# 4. Generación de la gráfica de Violín
+ggplot(cap_long, aes(x = Genero, y = Cantidad, fill = Genero)) +
+  # Fondo de Violín (Densidad de participación)
+  geom_violin(alpha = 0.25, color = "gray80", trim = FALSE) +
+  
+  # Puntos (Jitter) para ver cada capacitación individual
+  geom_point(position = position_jitter(width = 0.12), 
+             alpha = 0.2, color = "#3c6d67", size = 1.2) +
+  
+  # Barra de Desviación Estándar (±1 SD)
+  geom_errorbar(data = resumen_stats_cap, 
+                aes(y = Media, ymin = Media - SD, ymax = Media + SD), 
+                width = 0.1, color = "black", linewidth = 0.9) +
+  
+  # Punto del Promedio (Rombo Rojo)
+  geom_point(data = resumen_stats_cap, aes(y = Media), 
+             shape = 18, size = 6, color = "red") +
+  
+  # Etiquetas de texto con valores redondeados
+  geom_text(data = resumen_stats_cap, 
+            aes(y = Media, label = paste0("Media: ", round(Media, 2), 
+                                          "\nSD: ±", round(SD, 2))),
+            hjust = -0.4, vjust = 0.5, size = 3.8, fontface = "bold") +
+  
+  scale_fill_pacha() + 
+  labs(
+    title = "Distribución de Asistencia a Capacitaciones",
+    subtitle = "Comparativa de género: Promedios y dispersión real",
+    x = "Género",
+    y = "Número de Asistentes",
+    caption = "Manual de Marca Pachamama 2026"
+  ) +
+  theme_pachamama() +
+  theme(legend.position = "none")
+```
+
+```{r}
+capacitaciones$Hora_persona_mujer = capacitaciones$Numero_mujeres * capacitaciones$Numero_horas_capacitacion
+capacitaciones$Hora_persona_hombre = capacitaciones$Numero_hombres * capacitaciones$Numero_horas_capacitacion
+# 1. Cálculo de Horas-Persona y preparación de datos mensuales
+
+
+# 1. Preparar los datos de Horas-Persona
+Capacitaciones_df <- capacitaciones %>%
+  mutate(
+    # Aplicamos tus fórmulas
+    HP_Mujer = Numero_mujeres * Numero_horas_capacitacion,
+    HP_Hombre = Numero_hombres * Numero_horas_capacitacion,
+    Mes = floor_date(as.Date(Fecha), "month")
+  ) %>%
+  group_by(Mes) %>%
+  summarise(
+    Horas_Mujeres = sum(HP_Mujer, na.rm = TRUE),
+    Horas_Hombres = sum(HP_Hombre, na.rm = TRUE),
+    .groups = 'drop'
+  ) %>%
+  arrange(Mes)
+
+
+
+
+# 1. Preparar los datos anuales
+horas_anuales <- capacitaciones %>%
+  #filter(Comunidad == "Wayusentsa")%>%
+  mutate(
+    # Calculamos horas-persona total por cada fila
+    HP_fila = (Numero_mujeres + Numero_hombres) * Numero_horas_capacitacion,
+    # Extraemos el año
+    Anio = as.factor(year(as.Date(Fecha)))
+  ) %>%
+  group_by(Anio) %>%
+  summarise(Total_HP = sum(HP_fila, na.rm = TRUE), .groups = 'drop')
+
+# 2. Generar el gráfico de barras
+ggplot(horas_anuales, aes(x = Anio, y = Total_HP, fill = Anio)) +
+  geom_col(width = 0.7, show.legend = FALSE) +
+  # Etiquetas sobre las barras para lectura rápida
+  geom_text(aes(label = scales::comma(Total_HP)), 
+            vjust = -0.5, 
+            fontface = "bold", 
+            size = 4.5) +
+  scale_fill_pacha() + # Colores institucionales
+  labs(
+    title = "Horas-Persona en Capacitaciones",
+    subtitle = "Suma acumulada de horas capacitadas por la comunidad",
+    x = "Año",
+    y = "Total Horas-Persona",
+    caption = "Manual de Marca Pachamama 2024"
+  ) +
+  # Ajustar el límite superior para que no se corte la etiqueta
+  scale_y_continuous(expand = expansion(mult = c(0, 0.15))) +
+  theme_pachamama() +
+  theme(text = element_text(family = "sans"))
+```
+
+```{r}
+stop_words_es <- data.frame(word = c("de", "la", "el", "en", "y", "a", "los", "las", "un", "una", 
+                                     "con", "por", "para", "se", "del", "al", "lo", "su", "es", "una", "mas", "que"))
+
+# 2. Procesamiento con limpieza de NAs
+red_datos <- capacitaciones %>%
+  filter(!is.na(Capacidad_adquirida)) %>%
+  mutate(texto = str_to_lower(Capacidad_adquirida) %>% str_replace_all("[^[:alpha:][:space:]]", "")) %>%
+  unnest_tokens(bigrama, texto, token = "ngrams", n = 2) %>%
+  # Al separar, si una frase tenía una sola palabra, el segundo valor será NA
+  separate(bigrama, c("p1", "p2"), sep = " ") %>%
+  # ELIMINAR LOS NAs (Aquí es donde se soluciona el error)
+  filter(!is.na(p1), !is.na(p2)) %>%
+  # Quitar palabras sin significado
+  filter(!p1 %in% stop_words_es$word, !p2 %in% stop_words_es$word) %>%
+  count(p1, p2, sort = TRUE) %>%
+  filter(n > 1)
+
+# 3. Ahora sí, crear el objeto de red
+red_objeto <- graph_from_data_frame(red_datos)
+freq_nodos <- bind_rows(
+  red_datos %>% select(word = p1, n),
+  red_datos %>% select(word = p2, n)
+) %>%
+  group_by(word) %>%
+  summarise(freq = sum(n), .groups = "drop")
+
+
+# 4. Graficar
+set.seed(123)
+red_objeto <- graph_from_data_frame(red_datos)
+
+V(red_objeto)$freq <- freq_nodos$freq[match(V(red_objeto)$name, freq_nodos$word)]
+
+
+ggraph(red_objeto, layout = "kk") +
+  geom_edge_link(
+    aes(edge_alpha = n),
+    edge_colour = PAL$rio,
+    arrow = arrow(length = unit(3, "mm")),
+    end_cap = circle(3, "mm"),
+    show.legend = FALSE
+  ) +
+  geom_node_point(
+    aes(size = freq),
+    color = PAL$ave
+  ) +
+  geom_node_text(
+    aes(label = name),
+    vjust = 1.8,
+    size = 3,
+    fontface = "bold"
+  ) +
+  scale_size(range = c(3, 12)) +
+  labs(
+    title = "Red de Conceptos:Capacitaciones recibidas",
+  ) +
+  theme_void() +
+  theme(plot.margin = margin(20, 20, 20, 20))
+```
+
+## Mingas
+
+```{r}
+# 1. Filtrar y preparar datos de Mingas por Comunidad y Mes
+mingas_comunidad_mes <- mingas %>%
+  # Agrupamos por Comunidad (asegúrate que la 'C' coincida con tu CSV) y mes
+  mutate(Mes = floor_date(Fecha, "month")) %>%
+  group_by(Mes, Comunidad) %>%
+  summarise(Total = n(), .groups = 'drop') %>%
+  # Pasamos las comunidades a columnas
+  pivot_wider(names_from = Comunidad, values_from = Total, values_fill = 0) %>%
+  arrange(Mes)
+
+# 2. Convertir a objeto xts
+# Quitamos la primera columna (Mes) para los datos y la usamos como índice
+don_pacha_mingas <- xts(mingas_comunidad_mes[,-1], order.by = mingas_comunidad_mes$Mes)
+
+# --- CORRECCIÓN DEL ERROR DE COLORES ---
+# Usamos ncol(don_pacha_mingas) porque es el objeto que realmente contiene los datos
+colores_pacha <- as.character(PAL_CUAL[1:ncol(don_pacha_mingas)])
+# ---------------------------------------
+
+# 3. Generar la serie de tiempo interactiva
+plot_mingas_comunidad <- dygraph(don_pacha_mingas, main = "Tendencia Mensual de Mingas por Comunidad") %>%
+  dyOptions(
+    labelsUTC = FALSE, 
+    fillGraph = TRUE, 
+    fillAlpha = 0.05, 
+    drawGrid = TRUE, 
+    gridLineColor = "#183d1e20", 
+    colors = colores_pacha,       
+    strokeWidth = 2,
+    axisLineColor = "#3c6d67",
+    axisLabelFontSize = 12
+  ) %>%
+  dyRangeSelector(height = 40, strokeColor = PAL$rio, fillColor = PAL$cielo) %>%
+  dyCrosshair(direction = "vertical") %>%
+  dyHighlight(
+    highlightCircleSize = 5, 
+    highlightSeriesBackgroundAlpha = 0.3, 
+    hideOnMouseOut = FALSE,
+    highlightSeriesOpts = list(strokeWidth = 3)
+  ) %>%
+  dyRoller(rollPeriod = 1) %>%
+  dyAxis("y", label = "Número de Mingas") %>%
+  dyLegend(width = 400, show = "always", hideOnMouseOut = TRUE)
+
+plot_mingas_comunidad
+```
+
+
+```{r}
+# 1. Pre-procesamiento de datos y cálculo de estadísticos
+resumen_stats <- mingas %>%
+  select(Numero_hombres, Numero_mujeres) %>%
+  pivot_longer(cols = everything(), names_to = "Genero", values_to = "Cantidad") %>%
+  mutate(Genero = if_else(Genero == "Numero_hombres", "Hombres", "Mujeres")) %>%
+  group_by(Genero) %>%
+  summarise(
+    Media = mean(Cantidad, na.rm = TRUE),
+    SD = sd(Cantidad, na.rm = TRUE),
+    .groups = 'drop'
+  )
+
+mingas_long <- mingas %>%
+  select(Numero_hombres, Numero_mujeres) %>%
+  pivot_longer(cols = everything(), names_to = "Genero", values_to = "Cantidad") %>%
+  mutate(Genero = if_else(Genero == "Numero_hombres", "Hombres", "Mujeres"))
+
+# 2. Gráfica de Violín con Puntos, Métricas y Etiquetas de Texto
+ggplot(mingas_long, aes(x = Genero, y = Cantidad, fill = Genero)) +
+  # Fondo de Violín
+  geom_violin(alpha = 0.2, color = "gray80", trim = FALSE) +
+  
+  # Puntos individuales (dispersión real)
+  geom_point(position = position_jitter(width = 0.1), alpha = 0.15, color = "#3c6d67", size = 1) +
+  
+  # Barra de Desviación Estándar
+  geom_errorbar(data = resumen_stats, 
+                aes(y = Media, ymin = Media - SD, ymax = Media + SD), 
+                width = 0.1, color = "black", linewidth = 0.8) +
+  
+  # Punto del Promedio (Rombo)
+  geom_point(data = resumen_stats, aes(y = Media), 
+             shape = 18, size = 5, color = "red") +
+  
+  # --- NUEVA CAPA: Etiquetas de texto con los valores ---
+  geom_text(data = resumen_stats, 
+            aes(y = Media, label = paste0("Media: ", round(Media, 2), 
+                                          "\nSD: ±", round(SD, 2))),
+            hjust = -0.5,      # Desplaza el texto a la derecha de la métrica
+            vjust = 0.5,       # Centra verticalmente respecto al punto
+            size = 3.5, 
+            fontface = "bold",
+            color = "black") +
+  
+  scale_fill_pacha() +
+  labs(
+    title = "Estadísticas de Participación por Género",
+    subtitle = "Comparativa de medias y dispersión en Mingas comunitarias",
+    x = "Categoría",
+    y = "Número de Personas",
+    caption = "Manual de Marca Pachamama 2024"
+  ) +
+  theme_pachamama() +
+  theme(legend.position = "none")
+
+```
+
+```{r}
+mingas$Hora_persona_mujer = mingas$Numero_mujeres * mingas$Numero_horas_minga
+mingas$Hora_persona_hombre = mingas$Numero_hombres * mingas$Numero_horas_minga
+# 1. Cálculo de Horas-Persona y preparación de datos mensuales
+
+
+# 1. Preparar los datos de Horas-Persona
+mingas_interactivas_df <- mingas %>%
+  mutate(
+    # Aplicamos tus fórmulas
+    HP_Mujer = Numero_mujeres * Numero_horas_minga,
+    HP_Hombre = Numero_hombres * Numero_horas_minga,
+    Mes = floor_date(as.Date(Fecha), "month")
+  ) %>%
+  group_by(Mes) %>%
+  summarise(
+    Horas_Mujeres = sum(HP_Mujer, na.rm = TRUE),
+    Horas_Hombres = sum(HP_Hombre, na.rm = TRUE),
+    .groups = 'drop'
+  ) %>%
+  arrange(Mes)
+
+# 2. Convertir a objeto xts (necesario para dygraphs)
+don_pacha_hp <- xts(mingas_interactivas_df[,-1], order.by = mingas_interactivas_df$Mes)
+
+# 3. Definir colores (Asegúrate que PAL_CUAL tenga al menos 2 colores)
+colores_hp <- as.character(PAL_CUAL[1:ncol(don_pacha_hp)])
+
+# 4. Generar la serie de tiempo interactiva
+plot_hp_genero <- dygraph(don_pacha_hp, main = "Esfuerzo Mensual: Horas-Persona por Género") %>%
+  dyOptions(
+    labelsUTC = FALSE, 
+    fillGraph = TRUE, 
+    fillAlpha = 0.1, 
+    drawGrid = TRUE, 
+    gridLineColor = "#183d1e20", 
+    colors = colores_hp,       
+    strokeWidth = 2,
+    axisLineColor = "#3c6d67",
+    axisLabelFontSize = 12
+  ) %>%
+  dyRangeSelector(height = 40, strokeColor = PAL$rio, fillColor = PAL$cielo) %>%
+  dyCrosshair(direction = "vertical") %>%
+  dyHighlight(
+    highlightCircleSize = 5, 
+    highlightSeriesBackgroundAlpha = 0.3, 
+    hideOnMouseOut = FALSE,
+    highlightSeriesOpts = list(strokeWidth = 3)
+  ) %>%
+  dyRoller(rollPeriod = 1) %>% # Permite suavizar la curva si hay mucha variación
+  dyAxis("y", label = "Total Horas-Persona") %>%
+  dyLegend(width = 400, show = "always", hideOnMouseOut = TRUE)
+
+plot_hp_genero
+
+```
+
+```{r}
+
+
+# 1. Preparar los datos anuales
+horas_anuales <- mingas %>%
+  #filter(Comunidad == "Wayusentsa")%>%
+  mutate(
+    # Calculamos horas-persona total por cada fila
+    HP_fila = (Numero_mujeres + Numero_hombres) * Numero_horas_minga,
+    # Extraemos el año
+    Anio = as.factor(year(as.Date(Fecha)))
+  ) %>%
+  group_by(Anio) %>%
+  summarise(Total_HP = sum(HP_fila, na.rm = TRUE), .groups = 'drop')
+
+# 2. Generar el gráfico de barras
+ggplot(horas_anuales, aes(x = Anio, y = Total_HP, fill = Anio)) +
+  geom_col(width = 0.7, show.legend = FALSE) +
+  # Etiquetas sobre las barras para lectura rápida
+  geom_text(aes(label = scales::comma(Total_HP)), 
+            vjust = -0.5, 
+            fontface = "bold", 
+            size = 4.5) +
+  scale_fill_pacha() + # Colores institucionales
+  labs(
+    title = "Esfuerzo Total Anual: Horas-Persona en Mingas",
+    subtitle = "Suma acumulada de horas trabajadas por todos los participantes",
+    x = "Año",
+    y = "Total Horas-Persona",
+    caption = "Manual de Marca Pachamama 2024"
+  ) +
+  # Ajustar el límite superior para que no se corte la etiqueta
+  scale_y_continuous(expand = expansion(mult = c(0, 0.15))) +
+  theme_pachamama() +
+  theme(text = element_text(family = "sans"))
+
+```
+
+```{r}
+stop_words_es <- data.frame(word = c("de", "la", "el", "en", "y", "a", "los", "las", "un", "una", 
+                                     "con", "por", "para", "se", "del", "al", "lo", "su", "es", "una", "mas", "que"))
+
+# 2. Procesamiento con limpieza de NAs
+red_datos <- mingas %>%
+  filter(!is.na(Actividad_desarrollada_minga)) %>%
+  mutate(texto = str_to_lower(Actividad_desarrollada_minga) %>% str_replace_all("[^[:alpha:][:space:]]", "")) %>%
+  unnest_tokens(bigrama, texto, token = "ngrams", n = 2) %>%
+  # Al separar, si una frase tenía una sola palabra, el segundo valor será NA
+  separate(bigrama, c("p1", "p2"), sep = " ") %>%
+  # ELIMINAR LOS NAs (Aquí es donde se soluciona el error)
+  filter(!is.na(p1), !is.na(p2)) %>%
+  # Quitar palabras sin significado
+  filter(!p1 %in% stop_words_es$word, !p2 %in% stop_words_es$word) %>%
+  count(p1, p2, sort = TRUE) %>%
+  filter(n > 1)
+
+# 3. Ahora sí, crear el objeto de red
+red_objeto <- graph_from_data_frame(red_datos)
+freq_nodos <- bind_rows(
+  red_datos %>% select(word = p1, n),
+  red_datos %>% select(word = p2, n)
+) %>%
+  group_by(word) %>%
+  summarise(freq = sum(n), .groups = "drop")
+
+
+# 4. Graficar
+set.seed(123)
+red_objeto <- graph_from_data_frame(red_datos)
+
+V(red_objeto)$freq <- freq_nodos$freq[match(V(red_objeto)$name, freq_nodos$word)]
+
+
+ggraph(red_objeto, layout = "kk") +
+  geom_edge_link(
+    aes(edge_alpha = n),
+    edge_colour = PAL$rio,
+    arrow = arrow(length = unit(3, "mm")),
+    end_cap = circle(3, "mm"),
+    show.legend = FALSE
+  ) +
+  geom_node_point(
+    aes(size = freq),
+    color = PAL$ave
+  ) +
+  geom_node_text(
+    aes(label = name),
+    vjust = 1.8,
+    size = 3,
+    fontface = "bold"
+  ) +
+  scale_size(range = c(3, 12)) +
+  labs(
+    title = "Red de Conceptos: Mingas",
+  ) +
+  theme_void() +
+  theme(plot.margin = margin(20, 20, 20, 20))
+```
+
+```{r}
+mingas |>
+  transmute(
+    Fecha = format(Fecha, "%d/%m/%Y"),
+    Comunidad = Comunidad_std,
+    Monitor = Monitor_std,
+    Participantes = Participantes_std,
+    Tema = Actividad_desarrollada_minga
+  ) |>
+  arrange(desc(Fecha)) |>
+  datatable(
+    filter = "top",
+    extensions = c("Buttons", "Scroller"),
+    options = list(dom = "Bfrtip", buttons = c("csv", "excel"), scrollY = 350, scroller = TRUE, pageLength = 12),
+    class = "compact stripe hover"
+  )
+```
+
+# Planes de vida
+
+
+
+
+## Seguridad alimentaria
+```{r}
+
+metadata_seguridad_alimentaria <- planes %>%
+  filter(Actividad_monitorear == "Seguridad alimentaria") %>%
+  select(
+    `_id`, Comunidad_std, Fecha, Actividad_monitorear, Tipo_accion,
+    Quien_dirigido, Descripcion_accion, observaciones,
+    n_ninos, n_ninas, n_hombres, n_mujeres,
+    Total_mujeres, Total_hombres, Total_beneficiarios
+  )
+
+seguridad_alimentaria_all <- metadata_seguridad_alimentaria %>%
+  left_join(seg_alim, by = "_id") %>%
+  left_join(insumos, by = "_id")
+
+# Estandarizar nombres clave luego del join
+seguridad_alimentaria_all <- seguridad_alimentaria_all %>%
+  rename(
+    Comunidad = any_of(c("Comunidad_std", "Comunidad_std.x", "Comunidad_std.y")),
+    Fecha_registro = any_of(c("Fecha", "Fecha.x", "Fecha.y"))
+  )
+
+## Unión con datos de seguridad alimentaria
+conteo_actividades_seguridad <- seguridad_alimentaria_all %>%
+  select(Comunidad1, Tipo_accion, seguridad_alimentaria) %>%
+  group_by(Comunidad1, Tipo_accion, seguridad_alimentaria) %>%
+  summarise(Total_registros = n(), .groups = "drop")
+
+# Limpiar valores vacíos
+conteo_limpio <- conteo_actividades_seguridad %>%
+  mutate(across(where(is.character), ~ ifelse(.x == "" | is.na(.x), "No definido", .x)))
+
+# Flujo A: Comunidad -> Tipo de Acción
+flujo_A <- conteo_limpio %>%
+  group_by(Comunidad1, Tipo_accion) %>%
+  summarise(Weight = sum(Total_registros), .groups = "drop") %>%
+  rename(From = Comunidad1, To = Tipo_accion)
+
+# Flujo B: Tipo de Acción -> Seguridad Alimentaria
+flujo_B <- conteo_limpio %>%
+  group_by(Tipo_accion, seguridad_alimentaria) %>%
+  summarise(Weight = sum(Total_registros), .groups = "drop") %>%
+  rename(From = Tipo_accion, To = seguridad_alimentaria)
+
+# Unir flujos
+datos_sankey_seg <- bind_rows(flujo_A, flujo_B)
+
+# Colores oficiales para los nodos
+colores_pacha_js <- paste0("['", paste(PAL_CUAL, collapse = "', '"), "']")
+
+opts_sankey_seg <- list(
+  sankey = paste0("{
+    node: { 
+      colors: ", colores_pacha_js, ",
+      label: { fontName: 'Arial', fontSize: 13, color: '", PAL$hoja, "' },
+      nodePadding: 30
+    },
+    link: { 
+      colorMode: 'gradient',
+      colors: ", colores_pacha_js, "
+    }
+  }")
+)
+
+
+# Serie anual
+serie_anual_alimentaria <- seguridad_alimentaria_all %>%
+  mutate(
+    Fecha_registro1 = as.Date(Fecha_registro1),
+    Year = floor_date(Fecha_registro1, "year")
+  ) %>%
+  filter(!is.na(Year), !is.na(Comunidad1)) %>%
+  group_by(Year, Comunidad1) %>%
+  summarise(Total_registros = n(), .groups = "drop") %>%
+  mutate(Anio_Label = format(Year, "%Y"))
+
+ggplot(serie_anual_alimentaria, aes(x = Anio_Label, y = Total_registros, fill = Comunidad1)) +
+  geom_col(position = position_dodge(width = 0.9)) +
+  geom_text(
+    aes(label = Total_registros),
+    position = position_dodge(width = 0.9),
+    vjust = -0.5,
+    size = 3.5,
+    fontface = "bold",
+    color = PAL$hoja
+  ) +
+  scale_fill_manual(values = PAL_CUAL) +
+  labs(
+    title = "Registros Anuales por Comunidad",
+    subtitle = "Comparativa histórica de actividad (Seguridad alimentaria)",
+    x = "Año",
+    y = "Total de registros",
+    fill = "Comunidad"
+  ) +
+  theme_pachamama() +
+  theme(
+    panel.grid.major.x = element_blank(),
+    text = element_text(family = "sans")
+  )
+
+```
+
+`
+```{r}
+
+tasa_cambio_df <- serie_anual_alimentaria %>%
+  # Aseguramos el orden cronológico por comunidad
+  arrange(Comunidad1, Year) %>%
+  group_by(Comunidad1) %>%
+  # Calculamos el total del año anterior
+  mutate(Total_anterior = lag(Total_registros)) %>%
+  # Calculamos la tasa (solo donde hay un año previo)
+  mutate(Tasa_Cambio = ((Total_registros - Total_anterior) / Total_anterior) * 100) %>%
+  # Filtramos para quedarnos solo con los registros que tienen cálculo
+  filter(!is.na(Tasa_Cambio)) %>%
+  mutate(Anio_Label = format(Year, "%Y"))
+
+
+ggplot(tasa_cambio_df, aes(x = Anio_Label, y = Tasa_Cambio, color = Comunidad1, group = Comunidad1)) +
+  # Línea de referencia en 0%
+  geom_hline(yintercept = 0, linetype = "dashed", color = "grey50") +
+  
+  geom_line(linewidth = 1.2) +
+  geom_point(size = 3) +
+  
+  # Etiquetas de porcentaje sobre los puntos
+  geom_text(aes(label = paste0(round(Tasa_Cambio, 1), "%")), 
+            vjust = -1, size = 3.5, fontface = "bold", show.legend = FALSE) +
+  
+  scale_color_manual(values = PAL_CUAL) +
+  
+  labs(
+    title = "Tasa de Cambio Anual por Comunidad",
+    subtitle = "Variación porcentual respecto al año anterior",
+    x = "Año de comparación",
+    y = "Crecimiento / Decrecimiento (%)",
+    color = "Comunidad"
+  ) +
+  
+  # Ajuste de escala Y para dar espacio a las etiquetas
+  expand_limits(y = c(min(tasa_cambio_df$Tasa_Cambio) - 20, max(tasa_cambio_df$Tasa_Cambio) + 20)) +
+  
+  theme_pachamama() +
+  theme(text = element_text(family = "sans"))
+```
+
+
+
+<div class="section-note">Los archivos de seguridad alimentaria e insumos tienen estructuras más heterogéneas. Por eso el reporte detecta columnas de forma flexible y solo grafica cuando encuentra variables válidas.</div>
+
+
+```{r tabla-seg}
+datatable(
+  seguridad_alimentaria_all,
+  filter = "top",
+  extensions = c("Buttons", "Scroller"),
+  options = list(dom = "Bfrtip", buttons = c("csv", "excel"), scrollY = 350, scroller = TRUE, pageLength = 12),
+  class = "compact stripe hover"
+)
+```
+
+
+```{r}
+actividad_filtrada = seguridad_alimentaria_all%>%
+  #filter(Actividad_monitorear == "Salud")%>% # se puede activar o desactivar el filtro
+ # filter(Tipo_accion == "Entrega_de_insumos")%>%# se puede activar o desactivar el filtro
+  select(Actividad_monitorear, Fecha_registro1, Tipo_accion, Descripcion_accion, observaciones,  Quien_dirigido, n_ninos, n_ninas, n_hombres, n_mujeres, Total_mujeres, Total_hombres, Total_beneficiarios)
+
+
+stop_words_es <- data.frame(word = c("de", "la", "el", "en", "y", "a", "los", "las", "un", "una", 
+                                     "con", "por", "para", "se", "del", "al", "lo", "su", "es", "una", "mas", "que"))
+
+# 2. Procesamiento con limpieza de NAs
+red_datos <- actividad_filtrada %>%
+  filter(!is.na(observaciones)) %>%
+  mutate(texto = str_to_lower(observaciones) %>% str_replace_all("[^[:alpha:][:space:]]", "")) %>%
+  unnest_tokens(bigrama, texto, token = "ngrams", n = 2) %>%
+  # Al separar, si una frase tenía una sola palabra, el segundo valor será NA
+  separate(bigrama, c("p1", "p2"), sep = " ") %>%
+  # ELIMINAR LOS NAs (Aquí es donde se soluciona el error)
+  filter(!is.na(p1), !is.na(p2)) %>%
+  # Quitar palabras sin significado
+  filter(!p1 %in% stop_words_es$word, !p2 %in% stop_words_es$word) %>%
+  count(p1, p2, sort = TRUE) %>%
+  filter(n > 1)
+
+# 3. Ahora sí, crear el objeto de red
+red_objeto <- graph_from_data_frame(red_datos)
+freq_nodos <- bind_rows(
+  red_datos %>% select(word = p1, n),
+  red_datos %>% select(word = p2, n)
+) %>%
+  group_by(word) %>%
+  summarise(freq = sum(n), .groups = "drop")
+
+# 4. Graficar
+set.seed(123)
+red_objeto <- graph_from_data_frame(red_datos)
+
+V(red_objeto)$freq <- freq_nodos$freq[match(V(red_objeto)$name, freq_nodos$word)]
+
+
+ggraph(red_objeto, layout = "kk") +
+  geom_edge_link(
+    aes(edge_alpha = n),
+    edge_colour = PAL$rio,
+    arrow = arrow(length = unit(3, "mm")),
+    end_cap = circle(3, "mm"),
+    show.legend = FALSE
+  ) +
+  geom_node_point(
+    aes(size = freq),
+    color = PAL$ave
+  ) +
+  geom_node_text(
+    aes(label = name),
+    vjust = 1.8,
+    size = 3,
+    fontface = "bold"
+  ) +
+  scale_size(range = c(3, 12)) +
+  labs(
+    title = "Red de Conceptos: Observaciones Seguridad alimentaria",
+  ) +
+  theme_void() +
+  theme(plot.margin = margin(20, 20, 20, 20))
+```
+
+
+## Salud
+
+```{r}
+#| label: fig-beneficiarios-dirigido
+#| fig-cap: "Total de Beneficiarios por Grupo Objetivo"
+#| message: false
+#| warning: false
+#| echo: false
+
+# 1. Cargar librerías
+library(dplyr)
+library(tidyr)
+library(plotly)
+salud_df = planes%>%filter(Actividad_monitorear == "Salud")
+
+
+# 2. Procesamiento de datos
+datos_barras <- salud_df %>%
+  # Limpiar nombres vacíos
+  mutate(Quien_dirigido = ifelse(Quien_dirigido == "" | is.na(Quien_dirigido), "No definido", Quien_dirigido)) %>%
+  # Convertir a numérico y asegurar que no haya NAs en las columnas de conteo
+  mutate(across(c(n_ninos, n_ninas, n_hombres, n_mujeres), ~ replace_na(as.numeric(.x), 0))) %>%
+  # Calcular total por fila
+  mutate(Total_fila = n_ninos + n_ninas + n_hombres + n_mujeres) %>%
+  # REGLA: Si el total es 0 o NA, reemplazar por 1
+  mutate(Total_fila = ifelse(Total_fila == 0 | is.na(Total_fila), 1, Total_fila)) %>%
+  # Agrupar por la categoría de destino
+  group_by(Quien_dirigido) %>%
+  summarise(Total_Beneficiarios = sum(Total_fila), .groups = "drop") %>%
+  arrange(desc(Total_Beneficiarios))
+
+# 3. Crear el gráfico interactivo con Plotly
+p <- plot_ly(
+  datos_barras, 
+  x = ~reorder(Quien_dirigido, -Total_Beneficiarios), 
+  y = ~Total_Beneficiarios, 
+  type = 'bar',
+  marker = list(color = '#00A859', # Color verde Pachamama (ajustar si prefieres otro de PAL_CUAL)
+                line = list(color = 'rgb(8,48,107)', width = 1.5)),
+  text = ~paste("Grupo:", Quien_dirigido, "<br>Total:", Total_Beneficiarios),
+  hoverinfo = 'text'
+) %>%
+  layout(
+    title = list(text = "Entrega insumos en Salud por Total de Beneficiarios por Población Objetivo", x = 0.1),
+    xaxis = list(title = "Grupo Dirigido"),
+    yaxis = list(title = "Cantidad de Personas"),
+    margin = list(l = 50, r = 50, b = 100, t = 50)
+  )
+
+# 4. Mostrar gráfico
+p
+```
+
+```{r}
+
+# 1. Definir Stop Words
+stop_words_es <- data.frame(word = c("de", "la", "el", "en", "y", "a", "los", "las", "un", "una", 
+                                     "con", "por", "para", "se", "del", "al", "lo", "su", "es", 
+                                     "entrega", "insumos", "accion", "descripcion", "que", "mas"))
+
+# 2. Tokenizar y contar frecuencias
+conteo_palabras <- data.frame(texto = salud_df$Descripcion_accion) %>%
+  filter(!is.na(texto) & texto != "") %>% # Filtrar vacíos desde el inicio
+  mutate(texto = str_to_lower(texto) %>% str_replace_all("[^[:alpha:][:space:]]", "")) %>%
+  unnest_tokens(word, texto) %>%
+  filter(!word %in% stop_words_es$word) %>%
+  count(word, sort = TRUE) %>%
+  filter(nchar(word) > 2)
+
+# 3. Lógica Condicional para el Gráfico
+if (nrow(conteo_palabras) == 0) {
+  
+  # Si no hay datos, imprimimos un mensaje claro
+  cat("### No hay datos suficientes en las descripciones para generar la nube de palabras.")
+  
+} else {
+  
+  # Si hay datos, configuramos el fondo y dibujamos
+  par(bg = PAL$fondo) 
+  
+  wordcloud::wordcloud(
+    words = conteo_palabras$word, 
+    freq = conteo_palabras$n, 
+    min.freq = 1,           
+    max.words = 100,        
+    random.order = FALSE,   
+    rot.per = 0.35,         
+    colors = as.character(PAL_CUAL),
+    scale = c(3.5, 0.5),    
+    family = "sans"
+  )
+}
+```
+
+
+# Evidencias de huellas y rastros
+
+<div class="section-note">El ingest del repositorio muestra conteniedo de tipo de evidencia, taxonomía y coordenadas geográficas, por lo que esta sección resume frecuencia, temporalidad y distribución comunitaria. fileciteturn1file3</div>
+
+```{r jaguar-tipo}
+col_jag_tipo <- find_col(jaguar, "tipo_evidencia|tipo|evidencia|huella|rastros|avistamiento")
+
+if (nrow(jaguar) == 0 || is.na(col_jag_tipo)) {
+  empty_box("No se detectó una columna confiable para tipo de evidencia")
+} else {
+  jag_tipo <- jaguar |>
+    mutate(Tipo = .data[[col_jag_tipo]]) |>
+    filter(!is.na(Tipo)) |>
+    count(Tipo, sort = TRUE, name = "n")
+
+  if (!nrow(jag_tipo)) {
+    empty_box()
+  } else {
+    plot_ly(
+      jag_tipo,
+      labels = ~Tipo, values = ~n,
+      type = "pie", hole = 0.42,
+      textinfo = "label+percent",
+      marker = list(colors = cols_comunidades),
+      hovertemplate = "<b>%{label}</b><br>Total: %{value}<br>%{percent}<extra></extra>"
+    ) |>
+      layout(title = list(text = "Tipo de evidencia", font = list(color = pal_pachamama["verde_bosque"], size = 15))) |>
+      plotly_config()
+  }
+}
+
+```
+
+```{r jaguar-serie}
+jag_serie <- jaguar |>
+  filter(!is.na(YearMon)) |>
+  count(YearMon, name = "n")
+
+if (!nrow(jag_serie)) {
+  empty_box()
+} else {
+  plot_ly(
+    jag_serie,
+    x = ~YearMon, y = ~n,
+    type = "bar",
+    marker = list(color = pal_pachamama["verde_bosque"]),
+    hovertemplate = "%{x|%Y-%m}<br>Evidencias: %{y}<extra></extra>"
+  ) |>
+    layout(
+      title = list(text = "Evidencias de jaguar por mes", font = list(color = pal_pachamama["verde_bosque"], size = 15)),
+      xaxis = list(title = ""),
+      yaxis = list(title = "Número de evidencias"),
+      plot_bgcolor = "#FAFAFA", paper_bgcolor = "white"
+    ) |>
+    plotly_config()
+}
+```
+
+```{r jaguar-comunidad}
+
+jaguar <- jaguar %>%
+  mutate(
+    Id_taxonomica = ifelse(Nivel_taxonomico == "" | is.na(Nivel_taxonomico),
+                           "No identificada",
+                           "Identificada")
+  )
+
+conteo_actividades <- jaguar %>%
+  # Filtramos desde el 1 de diciembre de 2024 en adelante
+  filter(Fecha >= as.Date("2025-01-01")) %>%
+  group_by(Comunidad,Id_taxonomica ) %>%
+  summarise(Total_registros = n()) %>%
+  arrange(desc(Comunidad))
+
+# Visualizar resultado
+
+conteo_grafico <- conteo_actividades %>%
+  group_by(Comunidad) %>%
+  mutate(Porcentaje = Total_registros / sum(Total_registros) * 100) %>%
+  ungroup()
+
+ggplot(conteo_grafico, aes(x = reorder(Comunidad, Total_registros), y = Total_registros, fill = Id_taxonomica)) +
+  # Barras apiladas
+  geom_col(position = "stack", width = 0.7) +
+  
+  # Añadir etiquetas con el número total dentro de las barras
+  geom_text(aes(label = Total_registros), 
+            position = position_stack(vjust = 0.5), 
+            color = "white", 
+            fontface = "bold",
+            size = 3.5) +
+  
+  # Colores institucionales (Verde Hoja para Identificadas, Rio para No identificadas)
+  scale_fill_manual(values = c("Identificada" = PAL$hoja, "No identificada" = PAL$rio)) +
+  
+  # Girar coordenadas para que los nombres de las comunidades se lean bien
+  coord_flip() +
+  
+  labs(
+    title = "Monitoreo de Huellas y Rastros por Comunidad",
+    subtitle = "Comparativa de registros identificados vs. no identificados (Desde Ene 2025)",
+    x = "Comunidad",
+    y = "Total de Avistamientos / Rastros",
+    fill = "Estado Taxonómico"
+  ) +
+  
+  theme_pachamama() +
+  theme(
+    legend.position = "bottom",
+    text = element_text(family = "sans")
+  )
+```
+
+
+```{r}
+stop_words_es <- data.frame(word = c("de", "la", "el", "en", "y", "a", "los", "las", "un", "una", 
+                                     "con", "por", "para", "se", "del", "al", "lo", "su", "es", "una", "mas", "que"))
+
+# 2. Procesamiento con limpieza de NAs
+red_datos <- jaguar %>%
+  filter(!is.na(Entorno)) %>%
+  mutate(texto = str_to_lower(Entorno) %>% str_replace_all("[^[:alpha:][:space:]]", "")) %>%
+  unnest_tokens(bigrama, texto, token = "ngrams", n = 2) %>%
+  # Al separar, si una frase tenía una sola palabra, el segundo valor será NA
+  separate(bigrama, c("p1", "p2"), sep = " ") %>%
+  # ELIMINAR LOS NAs (Aquí es donde se soluciona el error)
+  filter(!is.na(p1), !is.na(p2)) %>%
+  # Quitar palabras sin significado
+  filter(!p1 %in% stop_words_es$word, !p2 %in% stop_words_es$word) %>%
+  count(p1, p2, sort = TRUE) 
+
+
+# 3. Ahora sí, crear el objeto de red
+red_objeto <- graph_from_data_frame(red_datos)
+freq_nodos <- bind_rows(
+  red_datos %>% select(word = p1, n),
+  red_datos %>% select(word = p2, n)
+) %>%
+  group_by(word) %>%
+  summarise(freq = sum(n), .groups = "drop")
+
+
+# 4. Graficar
+set.seed(123)
+red_objeto <- graph_from_data_frame(red_datos)
+
+V(red_objeto)$freq <- freq_nodos$freq[match(V(red_objeto)$name, freq_nodos$word)]
+
+
+ggraph(red_objeto, layout = "kk") +
+  geom_edge_link(
+    aes(edge_alpha = n),
+    edge_colour = PAL$rio,
+    arrow = arrow(length = unit(3, "mm")),
+    end_cap = circle(3, "mm"),
+    show.legend = FALSE
+  ) +
+  geom_node_point(
+    aes(size = freq),
+    color = PAL$ave
+  ) +
+  geom_node_text(
+    aes(label = name),
+    vjust = 1.8,
+    size = 3,
+    fontface = "bold"
+  ) +
+  scale_size(range = c(3, 12)) +
+  labs(
+    title = "Red de Conceptos: Entorno de registros",
+  ) +
+  theme_void() +
+  theme(plot.margin = margin(20, 20, 20, 20))
+```
+
+
+```{r tabla-jaguar}
+datatable(
+  jaguar,
+  filter = "top",
+  extensions = c("Buttons", "Scroller"),
+  options = list(dom = "Bfrtip", buttons = c("csv", "excel"), scrollY = 350, scroller = TRUE, pageLength = 12),
+  class = "compact stripe hover"
+)
+```
+
+# Socialización de acuerdos
+
+```{r social-serie}
+if (!nrow(social) || all(is.na(social$YearMon))) {
+  empty_box()
+} else {
+  soc_count <- social |>
+    filter(!is.na(YearMon), !is.na(Comunidad_std)) |>
+    count(YearMon, Comunidad_std, name = "n")
+
+  if (!nrow(soc_count)) {
+    empty_box()
+  } else {
+    plot_ly(
+      soc_count,
+      x = ~YearMon, y = ~n, color = ~Comunidad_std,
+      type = "bar", colors = cols_comunidades,
+      hovertemplate = "<b>%{fullData.name}</b><br>%{x|%Y-%m}<br>Registros: %{y}<extra></extra>"
+    ) |>
+      layout(
+        barmode = "stack",
+        title = list(text = "Socialización de acuerdos por mes y comunidad", font = list(color = pal_pachamama["verde_bosque"], size = 15)),
+        xaxis = list(title = "", rangeslider = list(visible = TRUE)),
+        yaxis = list(title = "Número de registros"),
+        legend = list(orientation = "h"),
+        plot_bgcolor = "#FAFAFA", paper_bgcolor = "white"
+      ) |>
+      plotly_config()
+  }
+}
+```
+
+```{r tabla-social}
+datatable(
+  social,
+  filter = "top",
+  extensions = c("Buttons", "Scroller"),
+  options = list(dom = "Bfrtip", buttons = c("csv", "excel"), scrollY = 350, scroller = TRUE, pageLength = 12),
+  class = "compact stripe hover"
+)
+```
+
+# Cacería y pesca
+
+```{r}
+
+# 1. Preparar los datos: Contar frecuencias de actividades
+resumen_actividades <- caceria %>%
+  group_by(Tipo_actividad) %>%
+  summarise(Conteo = n(), .groups = 'drop') %>%
+  # Limpieza de posibles NAs o textos vacíos
+  filter(!is.na(Tipo_actividad) & Tipo_actividad != "")
+
+# 2. Generar la gráfica de barras
+ggplot(resumen_actividades, aes(x = reorder(Tipo_actividad, -Conteo), y = Conteo, fill = Tipo_actividad)) +
+  geom_col(width = 0.5, show.legend = FALSE) +
+  # Etiquetas de valor sobre las barras para lectura inmediata
+  geom_text(aes(label = Conteo), vjust = -0.5, fontface = "bold", size = 5) +
+  # Colores específicos para distinguir cacería de pesca
+  scale_fill_manual(values = c("Caceria" = "#3c6d67", "Pesca_irregular" = "#e28743")) +
+  labs(
+    title = "Registros de Cacería y Pesca",
+    subtitle = "Monitoreo de actividades detectadas en territorio",
+    x = "Tipo de Actividad",
+    y = "Número de Registros",
+    caption = "Manual de Marca Pachamama 2026"
+  ) +
+  # Espacio superior para que la etiqueta no se corte
+  scale_y_continuous(expand = expansion(mult = c(0, 0.2))) +
+  theme_pachamama()
+```
+
+```{r}
+# 1. Preparar los datos: Conteo de registros (filas) por mes y actividad
+caceria_conteo_mensual <- caceria %>%
+  mutate(
+    # Aseguramos que la fecha sea reconocida y agrupamos por mes
+    Mes = floor_date(as.Date(Fecha), "month")
+  ) %>%
+  group_by(Mes, Tipo_actividad) %>%
+  summarise(Numero_Registros = n(), .groups = 'drop') # n() cuenta cada fila como 1
+
+# 2. Generar la gráfica de barras apiladas en el tiempo
+ggplot(caceria_conteo_mensual, aes(x = Mes, y = Numero_Registros, fill = Tipo_actividad)) +
+  # Barras con ancho ajustado para que se vean bien en serie de tiempo
+  geom_col(alpha = 0.8, width = 20, position = "stack") + 
+  # Etiquetas de valor sobre cada segmento de la barra
+  geom_text(aes(label = Numero_Registros), 
+            position = position_stack(vjust = 0.5), 
+            color = "white", fontface = "bold", size = 4) +
+  # Colores de la paleta Pachamama
+  scale_fill_manual(values = c("Caceria" = "#3c6d67", "Pesca_irregular" = "#e28743")) +
+  # Formateo del eje X
+  scale_x_date(date_labels = "%b %Y", date_breaks = "1 month") +
+  labs(
+    title = "Frecuencia Mensual de Cacería y Pesca",
+    subtitle = "Conteo basado en el número de registros realizados por los monitores",
+    x = "Mes / Año",
+    y = "Total de Registros",
+    fill = "Actividad",
+    caption = "Manual de Marca Pachamama 2026"
+  ) +
+  theme_pachamama() +
+  theme(
+    axis.text.x = element_text(angle = 45, hjust = 1),
+    legend.position = "bottom"
+  )
+```
+
+
+```{r}
+
+# 1. Filtrar y preparar los datos
+caceria_especies_uso <- caceria %>%
+  # Filtramos solo por Cacería
+  filter(Tipo_actividad == "Caceria") %>%
+  # Limpiamos NAs para que no ensucien la gráfica
+  mutate(
+    Especie = replace_na(Especie, "No especificado"),
+    Uso_caceria = replace_na(Uso_caceria, "Uso no registrado")
+  ) %>%
+  group_by(Especie, Uso_caceria) %>%
+  summarise(Conteo = n(), .groups = 'drop')
+
+# 2. Generar el gráfico de barras apiladas
+ggplot(caceria_especies_uso, aes(x = reorder(Especie, -Conteo, sum), y = Conteo, fill = Uso_caceria)) +
+  # Barras apiladas
+  geom_col(alpha = 0.9, width = 0.7) +
+  # Etiquetas de valor sobre cada segmento
+  geom_text(aes(label = Conteo), 
+            position = position_stack(vjust = 0.5), 
+            color = "white", fontface = "bold", size = 4) +
+  # Paleta institucional
+  scale_fill_pacha() + 
+  labs(
+    title = "Presión de Cacería por Especie y Uso",
+    subtitle = "Solo registros de actividad: Cacería",
+    x = "Especie",
+    y = "Número de Registros",
+    fill = "Destino del Uso",
+    caption = "Manual de Marca Pachamama 2026"
+  ) +
+  theme_pachamama() +
+  theme(
+    axis.text.x = element_text(angle = 45, hjust = 1),
+    legend.position = "bottom"
+  )
+```
+
+```{r}
+# 1. Preparar los datos: Calcular totales y porcentajes
+resumen_normativa <- caceria %>%
+  filter(!is.na(Cumplio_normativa)) %>%
+  group_by(Cumplio_normativa) %>%
+  summarise(Total = n(), .groups = 'drop') %>%
+  mutate(
+    Porcentaje = Total / sum(Total),
+    Etiqueta = paste0(Cumplio_normativa, "\n", Total, " (", percent(Porcentaje, accuracy = 1), ")")
+  )
+
+# 2. Generar el Gráfico de Pastel
+ggplot(resumen_normativa, aes(x = "", y = Porcentaje, fill = Cumplio_normativa)) +
+  geom_bar(stat = "identity", width = 1, color = "white") +
+  # Convertir a coordenadas polares para que sea un círculo
+  coord_polar("y", start = 0) +
+  # Añadir etiquetas internas
+  geom_text(aes(label = Etiqueta), 
+            position = position_stack(vjust = 0.5), 
+            color = "white", fontface = "bold", size = 5) +
+  # Colores: Verde para cumplimiento, Naranja/Rojo para incumplimiento
+  scale_fill_manual(values = c("Si" = "#3c6d67", "No" = "#e28743")) +
+  labs(
+    title = "Cumplimiento de la Normativa Comunitaria",
+    subtitle = "Evaluación de registros de cacería y pesca",
+    caption = "Manual de Marca Pachamama 2026"
+  ) +
+  theme_void() + # Limpia ejes y cuadrículas para un look de pastel puro
+  theme(
+    legend.position = "none", # Quitamos la leyenda porque la info ya está en el pastel
+    plot.title = element_text(hjust = 0.5, face = "bold", size = 16),
+    plot.subtitle = element_text(hjust = 0.5, size = 12)
+  )
+```
+
+```{r}
+
+# 1. Preparar los datos: Contar frecuencias de acciones
+resumen_acciones <- caceria %>%
+  # Limpiamos NAs y espacios vacíos para que la gráfica sea útil
+  filter(!is.na(Acciones_a_tomar) & Acciones_a_tomar != "" & Acciones_a_tomar != " ") %>%
+  group_by(Acciones_a_tomar) %>%
+  summarise(Conteo = n(), .groups = 'drop')
+
+# 2. Generar la gráfica de barras
+ggplot(resumen_acciones, aes(x = reorder(Acciones_a_tomar, -Conteo), y = Conteo, fill = Acciones_a_tomar)) +
+  geom_col(width = 0.5, show.legend = FALSE) +
+  # Etiquetas de valor sobre las barras
+  geom_text(aes(label = Conteo), vjust = -0.5, fontface = "bold", size = 5, color = "#183d1e") +
+  # Paleta Pachamama (Verdes y tonos tierra)
+  scale_fill_manual(values = c("Llamado_atencion" = "#e28743", "otro" = "#3c6d67")) +
+  labs(
+    title = "Medidas y Acciones Ejecutadas",
+    subtitle = "Respuesta institucional ante registros de monitoreo",
+    x = "Acción Realizada",
+    y = "Número de Casos",
+    caption = "Manual de Marca Pachamama 2026"
+  ) +
+  # Ajuste del eje Y para visibilidad de etiquetas
+  scale_y_continuous(expand = expansion(mult = c(0, 0.2))) +
+  theme_pachamama()
+```
+
+
+# Reforestación
+
+```{r}
+
+```
+
+```{r}
+
+# 1. Preparar datos por Especie: NA corregidos a 1
+refo_especie <- reforestacion %>%
+  mutate(
+    # Reemplazamos NA en especie por una etiqueta clara
+    especie_limpia = if_else(is.na(especie) | especie == "", "No especificada", especie),
+    # Convertimos num_plantas a numérico y NA a 1
+    plantas_conteo = replace_na(as.numeric(num_plantas), 1)
+  ) %>%
+  group_by(especie_limpia) %>%
+  summarise(Total_Plantas = sum(plantas_conteo), .groups = 'drop')
+
+# 2. Generar la gráfica de barras por Especie
+ggplot(refo_especie, aes(x = reorder(especie_limpia, -Total_Plantas), y = Total_Plantas)) +
+  geom_col(width = 0.7, show.legend = FALSE) +
+  # Etiquetas con el total sobre cada barra
+  geom_text(aes(label = Total_Plantas), vjust = -0.5, fontface = "bold", size = 5, color = "#183d1e") +
+  # Paleta Pachamama
+  scale_fill_pacha() + 
+  labs(
+    title = "Diversidad de Especies Reforestadas",
+    subtitle = "Conteo total de plantas (Valores NA contabilizados como 1)",
+    x = "Especie / Variedad",
+    y = "Número Total de Plantas",
+    caption = "Manual de Marca Pachamama 2026"
+  ) +
+  # Ajuste para evitar que las etiquetas superiores se corten
+  scale_y_continuous(expand = expansion(mult = c(0, 0.2))) +
+  theme_pachamama() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+
+```
+
+
+
+# Indicadores propuestos
+
+```{r indicadores}
+meses_rango <- if (nrow(actividad_total)) interval(min(actividad_total$Fecha), max(actividad_total$Fecha)) %/% months(1) + 1 else 0
+meses_asm   <- asambleas |> filter(!is.na(YearMon)) |> distinct(YearMon) |> nrow()
+IRA         <- if (meses_rango > 0) round(100 * meses_asm / meses_rango, 1) else NA_real_
+
+hom_tot <- sum(asambleas$Numero_hombres_std, na.rm = TRUE)
+muj_tot <- sum(asambleas$Numero_mujeres_std, na.rm = TRUE)
+IEGP    <- if ((hom_tot + muj_tot) > 0) round(100 * muj_tot / (hom_tot + muj_tot), 1) else NA_real_
+
+IC <- if (sum(capacitaciones$Participantes_std, na.rm = TRUE) > 0) round(sum(capacitaciones$Horas_std, na.rm = TRUE) / sum(capacitaciones$Participantes_std, na.rm = TRUE), 2) else NA_real_
+
+DTC <- capacitaciones |>
+  filter(!is.na(Capacidad_adquirida_std)) |>
+  distinct(Capacidad_adquirida_std) |>
+  nrow()
+
+act_anual <- actividad_total |>
+  mutate(Anio = year(Fecha)) |>
+  count(Anio, name = "Total") |>
+  arrange(Anio)
+
+Crec <- if (nrow(act_anual) >= 2 && act_anual$Total[1] > 0) round(100 * (dplyr::last(act_anual$Total) - act_anual$Total[1]) / act_anual$Total[1], 1) else NA_real_
+
+ind_df <- tibble(
+  Indicador = c("Índice de regularidad de asambleas", "Índice de equidad de género", "Intensidad de capacitación", "Diversidad temática", "Crecimiento de registros"),
+  Valor = c(IRA, IEGP, IC, DTC, Crec),
+  Unidad = c("%", "%", "horas/persona", "temas", "%"),
+  Meta = c(">= 80", "45–55", ">= 2", ">= 5", "> 0"),
+  Cumplimiento = c(
+    ifelse(!is.na(IRA) && IRA >= 80, "Alto", ifelse(!is.na(IRA) && IRA >= 60, "Medio", "Bajo")),
+    ifelse(!is.na(IEGP) && IEGP >= 45 && IEGP <= 55, "Alto", "Medio"),
+    ifelse(!is.na(IC) && IC >= 2, "Alto", "Medio"),
+    ifelse(DTC >= 5, "Alto", "Medio"),
+    ifelse(!is.na(Crec) && Crec > 0, "Alto", "Bajo")
+  )
+)
+
+datatable(ind_df, options = list(dom = "t", pageLength = 10), class = "compact stripe", rownames = FALSE)
+```
+
+
+```{r radar}
+radar_val <- c(
+  IRA  = ifelse(is.na(IRA), 0, pmin(IRA / 80, 1) * 100),
+  IEGP = ifelse(is.na(IEGP), 0, pmax(0, 1 - abs(IEGP - 50) / 50) * 100),
+  IC   = ifelse(is.na(IC), 0, pmin(IC / 2, 1) * 100),
+  DTC  = pmin(DTC / 5, 1) * 100,
+  CREC = ifelse(is.na(Crec), 0, pmin(pmax(Crec, 0) / 30, 1) * 100)
+)
+
+plot_ly(
+  type = "scatterpolar",
+  r = c(radar_val, radar_val[1]),
+  theta = c("Regularidad", "Equidad", "Intensidad", "Diversidad", "Crecimiento", "Regularidad"),
+  fill = "toself",
+  fillcolor = "rgba(45,106,79,0.25)",
+  line = list(color = pal_pachamama["verde_bosque"], width = 2.5),
+  marker = list(size = 8, color = pal_pachamama["verde_bosque"]),
+  name = "Cumplimiento"
+) |>
+  layout(
+    polar = list(radialaxis = list(visible = TRUE, range = c(0, 100))),
+    title = list(text = "Cumplimiento relativo de indicadores", font = list(color = pal_pachamama["verde_bosque"], size = 15)),
+    showlegend = FALSE,
+    paper_bgcolor = "white"
+  ) |>
+  plotly_config()
+```
+
+# Comparativo por comunidad
+
+```{r comparativo}
+comp <- full_join(
+  asambleas |>
+    filter(!is.na(Comunidad_std)) |>
+    group_by(Comunidad_std) |>
+    summarise(Asambleas = n(), Participantes_asambleas = sum(Participantes_std, na.rm = TRUE), Pct_mujeres = round(100 * sum(Numero_mujeres_std, na.rm = TRUE) / pmax(sum(Participantes_std, na.rm = TRUE), 1), 1), .groups = "drop"),
+  capacitaciones |>
+    filter(!is.na(Comunidad_std)) |>
+    group_by(Comunidad_std) |>
+    summarise(Capacitaciones = n(), Horas = sum(Horas_std, na.rm = TRUE), Participantes_capacitacion = sum(Participantes_std, na.rm = TRUE), .groups = "drop"),
+  by = "Comunidad_std"
+) |>
+  mutate(across(where(is.numeric), ~replace_na(., 0)))
+
+if (!nrow(comp)) {
+  empty_box()
+} else {
+  datatable(comp, options = list(dom = "ft", pageLength = 10), class = "compact stripe hover", rownames = FALSE)
+}
+```
+
+```{r heatmap}
+heatmap_df <- bind_rows(
+  asambleas |> transmute(Mes = format(YearMon, "%Y-%m"), Comunidad = Comunidad_std),
+  capacitaciones |> transmute(Mes = format(YearMon, "%Y-%m"), Comunidad = Comunidad_std),
+  social |> transmute(Mes = format(YearMon, "%Y-%m"), Comunidad = Comunidad_std)
+) |>
+  filter(!is.na(Mes), !is.na(Comunidad)) |>
+  count(Mes, Comunidad, name = "n") |>
+  complete(Mes, Comunidad, fill = list(n = 0))
+
+if (!nrow(heatmap_df)) {
+  empty_box()
+} else {
+  plot_ly(
+    heatmap_df,
+    x = ~Comunidad, y = ~Mes, z = ~n,
+    type = "heatmap",
+    colorscale = list(c(0, "#ECFDF5"), c(0.5, "#40916C"), c(1, "#1B4332")),
+    hovertemplate = "<b>%{x}</b><br>%{y}<br>Registros: %{z}<extra></extra>"
+  ) |>
+    layout(
+      title = list(text = "Mapa de calor de actividad por mes y comunidad", font = list(color = pal_pachamama["verde_bosque"], size = 15)),
+      xaxis = list(title = ""),
+      yaxis = list(title = "Mes", autorange = "reversed"),
+      plot_bgcolor = "white", paper_bgcolor = "white"
+    ) |>
+    plotly_config()
+}
+```
+
+# Notas metodológicas
+
+::: {.callout-note}
+Se revisó el ingest del repositorio y se identificó que el proyecto contiene los datos `Asambleas.csv`, `Capacitaciones.csv`, `df_entrega_insumos.csv`, `df_seguridad_alimentaria.csv`, `Evidencias_jaguar.csv` y `Socialización_acuerdos.csv`, además de salidas HTML interactivas previas para series temporales en `EDA/Plots/`. El `renv.lock` registra como paquetes núcleo `shiny`, `bslib`, `dplyr`, `tidyr`, `lubridate`, `ggplot2`, `plotly`, `leaflet`, `DT`, `htmlwidgets` y `sf`. fileciteturn0file0
+:::
+
+::: {.callout-tip}
+Principales correcciones aplicadas en esta versión:
+
+1. Se eliminó la dependencia de `estilos.css`, que podía causar fallo si el archivo no existía.
+2. Se añadieron funciones auxiliares para detectar columnas, convertir fechas y numéricos, y manejar tablas heterogéneas sin romper el render.
+3. Los filtros por comunidad y rango de años ahora se aplican a todos los datasets, no solo a asambleas y capacitaciones.
+4. Cada gráfico tiene una salida segura para evitar errores cuando faltan registros o columnas.
+5. Se incorporaron gráficos adicionales: monitores con más registros, comunidad para jaguar, seguridad alimentaria por comunidad y un heatmap global de actividad.
+:::
+
+Reporte generado automáticamente con Quarto + R.

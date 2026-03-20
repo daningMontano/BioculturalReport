@@ -1,0 +1,206 @@
+/* =====================================================================
+   estilos.css — Fundación Pachamama · Reporte Biocultural
+   ===================================================================== */
+
+/* Variables de color */
+:root {
+  --verde-bosque:  #2D6A4F;
+  --verde-medio:   #40916C;
+  --verde-claro:   #74C69D;
+  --verde-suave:   #B7E4C7;
+  --tierra:        #8B5E3C;
+  --tierra-claro:  #D4A373;
+  --amarillo:      #FFD166;
+  --azul:          #264653;
+  --gris:          #6B7280;
+  --fondo:         #F9FAFB;
+}
+
+/* ── Fuente base ── */
+body {
+  font-family: 'Inter', 'Segoe UI', system-ui, sans-serif;
+  color: #1F2937;
+  background-color: var(--fondo);
+}
+
+/* ── Encabezado del documento ── */
+.quarto-title-block {
+  background: linear-gradient(135deg, var(--verde-bosque) 0%, var(--azul) 100%);
+  color: white !important;
+  padding: 2.5rem 2rem 2rem;
+  border-radius: 0 0 1rem 1rem;
+  margin-bottom: 2rem;
+}
+
+.quarto-title-block .title {
+  color: white !important;
+  font-size: 2rem;
+  font-weight: 700;
+}
+
+.quarto-title-block .subtitle {
+  color: var(--verde-suave) !important;
+  font-size: 1.1rem;
+}
+
+.quarto-title-block .quarto-title-meta {
+  color: rgba(255,255,255,0.75) !important;
+}
+
+/* ── TOC lateral ── */
+#quarto-sidebar {
+  background-color: white;
+  border-right: 1px solid #E5E7EB;
+}
+
+#TOC .nav-link {
+  color: var(--gris);
+  font-size: 0.875rem;
+  padding: 0.3rem 1rem;
+  border-left: 3px solid transparent;
+  transition: all 0.2s;
+}
+
+#TOC .nav-link:hover,
+#TOC .nav-link.active {
+  color: var(--verde-bosque);
+  border-left-color: var(--verde-bosque);
+  background-color: #F0FDF4;
+  font-weight: 600;
+}
+
+/* ── KPI Grid ── */
+.kpi-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+  gap: 1.25rem;
+  margin: 1.5rem 0 2rem;
+}
+
+.kpi-card {
+  background: white;
+  border-radius: 0.75rem;
+  padding: 1.25rem 1rem;
+  box-shadow: 0 1px 4px rgba(0,0,0,0.08), 0 0 0 1px rgba(0,0,0,0.04);
+  text-align: center;
+  transition: transform 0.2s, box-shadow 0.2s;
+}
+
+.kpi-card:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 4px 12px rgba(0,0,0,0.12);
+}
+
+.kpi-icon {
+  font-size: 1.75rem;
+  margin-bottom: 0.5rem;
+}
+
+.kpi-valor {
+  font-size: 2rem;
+  font-weight: 700;
+  color: #111827;
+  line-height: 1.1;
+}
+
+.kpi-etiqueta {
+  font-size: 0.8rem;
+  color: var(--gris);
+  margin-top: 0.3rem;
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+
+/* ── Secciones ── */
+.quarto-section-identifier {
+  color: var(--verde-bosque) !important;
+}
+
+h1, h2, h3 {
+  color: var(--verde-bosque);
+}
+
+h1 { border-bottom: 2px solid var(--verde-suave); padding-bottom: 0.5rem; }
+h2 { color: var(--azul); }
+
+/* ── Callouts personalizados ── */
+.callout {
+  border-radius: 0.5rem;
+}
+
+.callout-note {
+  border-left-color: var(--verde-bosque);
+  background-color: #F0FDF4;
+}
+
+.callout-tip {
+  border-left-color: var(--verde-medio);
+}
+
+.callout-important {
+  border-left-color: var(--tierra);
+  background-color: #FFF7ED;
+}
+
+/* ── Tablas DT ── */
+.dataTables_wrapper {
+  font-size: 0.875rem;
+}
+
+table.dataTable thead th {
+  background-color: var(--verde-bosque) !important;
+  color: white !important;
+  font-weight: 600;
+}
+
+table.dataTable.stripe tbody tr.odd {
+  background-color: #F9FAFB;
+}
+
+table.dataTable.hover tbody tr:hover {
+  background-color: #ECFDF5 !important;
+}
+
+/* ── Plotly charts ── */
+.js-plotly-plot {
+  border-radius: 0.5rem;
+  box-shadow: 0 1px 4px rgba(0,0,0,0.06);
+  margin: 0.75rem 0;
+}
+
+/* ── Código ── */
+details.code-fold summary {
+  color: var(--verde-bosque);
+  font-size: 0.8rem;
+  cursor: pointer;
+}
+
+pre.sourceCode {
+  border-left: 3px solid var(--verde-claro);
+  border-radius: 0.25rem;
+  font-size: 0.8rem;
+}
+
+/* ── Footer ── */
+.page-footer {
+  border-top: 1px solid #E5E7EB;
+  color: var(--gris);
+  font-size: 0.8rem;
+  padding-top: 1rem;
+  margin-top: 2rem;
+}
+
+/* ── Responsive ── */
+@media (max-width: 768px) {
+  .kpi-grid {
+    grid-template-columns: repeat(2, 1fr);
+  }
+  .kpi-valor { font-size: 1.5rem; }
+}
+
+@media (max-width: 480px) {
+  .kpi-grid {
+    grid-template-columns: 1fr;
+  }
+}
